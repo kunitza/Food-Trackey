@@ -5,6 +5,132 @@ import {
 import { useFirestore } from '../hooks/useFirestore'
 import { getTodayKey, lbsToKg, kgToLbs, formatDate } from '../utils/macros'
 
+// ---- Simple Date Picker (no red weekends) ----
+function SimpleDatePicker({ value, max, onChange }) {
+  const [open, setOpen] = useState(false)
+  const selected = new Date(value + 'T12:00:00')
+  const [viewMonth, setViewMonth] = useState(selected.getMonth())
+  const [viewYear, setViewYear] = useState(selected.getFullYear())
+
+  const maxDate = max ? new Date(max + 'T12:00:00') : new Date()
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate()
+  const firstDayOfWeek = new Date(viewYear, viewMonth, 1).getDay()
+
+  const weeks = []
+  let week = new Array(firstDayOfWeek).fill(null)
+  for (let d = 1; d <= daysInMonth; d++) {
+    week.push(d)
+    if (week.length === 7) {
+      weeks.push(week)
+      week = []
+    }
+  }
+  if (week.length > 0) {
+    while (week.length < 7) week.push(null)
+    weeks.push(week)
+  }
+
+  function handleDayClick(day) {
+    if (!day) return
+    const m = String(viewMonth + 1).padStart(2, '0')
+    const d = String(day).padStart(2, '0')
+    const dateStr = `${viewYear}-${m}-${d}`
+    const dateObj = new Date(dateStr + 'T12:00:00')
+    if (dateObj > maxDate) return
+    onChange(dateStr)
+    setOpen(false)
+  }
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1) }
+    else setViewMonth(m => m - 1)
+  }
+
+  function nextMonth() {
+    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1) }
+    else setViewMonth(m => m + 1)
+  }
+
+  const canGoNext = new Date(viewYear, viewMonth + 1, 1) <= maxDate
+
+  const displayDate = selected.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-left focus:outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/30 flex items-center gap-2"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="text-gray-400 shrink-0">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+        <span className="text-brand-dark font-medium">{displayDate}</span>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-200 shadow-lg z-50 p-3 min-w-[280px]">
+            {/* Month nav */}
+            <div className="flex items-center justify-between mb-2">
+              <button onClick={prevMonth} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
+              <span className="text-sm font-semibold text-brand-dark">
+                {new Date(viewYear, viewMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </span>
+              <button onClick={nextMonth} disabled={!canGoNext} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 disabled:opacity-30">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
+            </div>
+
+            {/* Weekday headers */}
+            <div className="grid grid-cols-7 mb-1">
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
+                <div key={d} className="text-center text-[10px] font-semibold text-gray-400 py-1">{d}</div>
+              ))}
+            </div>
+
+            {/* Day grid */}
+            {weeks.map((week, wi) => (
+              <div key={wi} className="grid grid-cols-7">
+                {week.map((day, di) => {
+                  if (!day) return <div key={di} />
+                  const m = String(viewMonth + 1).padStart(2, '0')
+                  const d = String(day).padStart(2, '0')
+                  const dateStr = `${viewYear}-${m}-${d}`
+                  const dateObj = new Date(dateStr + 'T12:00:00')
+                  const isFuture = dateObj > maxDate
+                  const isSelected = dateStr === value
+                  const isToday = dateStr === getTodayKey()
+
+                  return (
+                    <button
+                      key={di}
+                      onClick={() => handleDayClick(day)}
+                      disabled={isFuture}
+                      className={`w-full aspect-square flex items-center justify-center text-xs font-medium rounded-full transition-colors
+                        ${isSelected ? 'bg-brand-purple text-white' : ''}
+                        ${!isSelected && isToday ? 'bg-brand-purple/10 text-brand-purple font-bold' : ''}
+                        ${!isSelected && !isToday && !isFuture ? 'text-brand-dark hover:bg-gray-100' : ''}
+                        ${isFuture ? 'text-gray-300 cursor-not-allowed' : ''}
+                      `}
+                    >
+                      {day}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ---- Main Weight Component ----
 export default function Weight() {
   const { weightLog, addWeightEntry, removeWeightEntry, updateWeightUnit } = useFirestore()
   const [weightInput, setWeightInput] = useState('')
@@ -17,10 +143,8 @@ export default function Weight() {
   const entries = weightLog?.entries || []
   const todayKey = getTodayKey()
 
-  // Check if selected date already has an entry
   const dateEntry = entries.find(e => e.date === entryDate)
 
-  // Filter entries for chart based on range
   const chartData = useMemo(() => {
     let filtered = [...entries]
     if (chartRange !== 'all') {
@@ -39,15 +163,18 @@ export default function Weight() {
     })
   }, [entries, chartRange, unit])
 
+  // Table data: explicitly sorted descending by date
   const tableData = useMemo(() => {
-    return [...entries].reverse().map(e => {
-      const d = new Date(e.date + 'T12:00:00')
-      return {
-        date: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-        dateRaw: e.date,
-        weight: unit === 'kg' ? lbsToKg(e.weightLbs) : e.weightLbs,
-      }
-    })
+    return [...entries]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .map(e => {
+        const d = new Date(e.date + 'T12:00:00')
+        return {
+          date: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
+          dateRaw: e.date,
+          weight: unit === 'kg' ? lbsToKg(e.weightLbs) : e.weightLbs,
+        }
+      })
   }, [entries, unit])
 
   const avgWeight = useMemo(() => {
@@ -88,17 +215,17 @@ export default function Weight() {
         {/* Date picker */}
         <div className="flex items-center gap-2 mb-3">
           <span className="text-xs font-medium text-gray-500">Date:</span>
-          <input
-            type="date"
-            value={entryDate}
-            max={todayKey}
-            onChange={(e) => setEntryDate(e.target.value)}
-            className="flex-1 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/30"
-          />
+          <div className="flex-1">
+            <SimpleDatePicker
+              value={entryDate}
+              max={todayKey}
+              onChange={setEntryDate}
+            />
+          </div>
           {entryDate !== todayKey && (
             <button
               onClick={() => setEntryDate(todayKey)}
-              className="text-[10px] text-brand-purple font-semibold hover:underline"
+              className="text-[10px] text-brand-purple font-semibold hover:underline shrink-0"
             >
               Today
             </button>

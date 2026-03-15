@@ -7,13 +7,87 @@ import { calcCalories, getTodayKey, calcMacroGrams, lbsToKg } from '../utils/mac
 import { getLocalDateStr } from '../utils/timezone'
 import { PRESETS } from '../utils/macros'
 
-// Chart colors
 const CHART = {
   protein: '#082900',
   carbs: '#846075',
   fat: '#D4AA7D',
   fiber: '#1F68C1',
   weight: '#0A0B0A',
+}
+
+// Custom tooltip that always shows total calories
+function CustomTooltip({ active, payload, label, mode, weightUnit }) {
+  if (!active || !payload || payload.length === 0) return null
+
+  const dataPoint = payload[0]?.payload
+  if (!dataPoint) return null
+
+  // Calculate total calories from the underlying data (not the chart values)
+  const totalCalories = dataPoint.calories || 0
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-2.5 shadow-md text-[11px]">
+      <p className="font-semibold text-brand-dark mb-1.5">{label}</p>
+
+      {mode === 'calories' ? (
+        <>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: CHART.protein }} />
+            <span className="text-gray-600">Protein:</span>
+            <span className="font-semibold text-brand-dark ml-auto">{dataPoint.proteinCal} cal</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: CHART.carbs }} />
+            <span className="text-gray-600">Carbs:</span>
+            <span className="font-semibold text-brand-dark ml-auto">{dataPoint.carbsCal} cal</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: CHART.fat }} />
+            <span className="text-gray-600">Fat:</span>
+            <span className="font-semibold text-brand-dark ml-auto">{dataPoint.fatCal} cal</span>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: CHART.protein }} />
+            <span className="text-gray-600">Protein:</span>
+            <span className="font-semibold text-brand-dark ml-auto">{dataPoint.protein}g</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: CHART.carbs }} />
+            <span className="text-gray-600">Carbs:</span>
+            <span className="font-semibold text-brand-dark ml-auto">{dataPoint.carbs}g</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: CHART.fat }} />
+            <span className="text-gray-600">Fat:</span>
+            <span className="font-semibold text-brand-dark ml-auto">{dataPoint.fat}g</span>
+          </div>
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: CHART.fiber }} />
+            <span className="text-gray-600">Fiber:</span>
+            <span className="font-semibold text-brand-dark ml-auto">{dataPoint.fiber}g</span>
+          </div>
+        </>
+      )}
+
+      {/* Always show total calories */}
+      <div className="border-t border-gray-100 mt-1.5 pt-1.5 flex items-center gap-1.5">
+        <span className="font-semibold text-gray-600">Total:</span>
+        <span className="font-bold text-brand-dark ml-auto">{totalCalories} cal</span>
+      </div>
+
+      {/* Weight if available */}
+      {dataPoint.weight && (
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <div className="w-2 h-0.5 rounded" style={{ backgroundColor: CHART.weight }} />
+          <span className="text-gray-600">Weight:</span>
+          <span className="font-semibold text-brand-dark ml-auto">{dataPoint.weight} {weightUnit}</span>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function History() {
@@ -26,7 +100,6 @@ export default function History() {
 
   const weightUnit = weightLog?.preferredUnit || 'lbs'
 
-  // Current targets (used as fallback for days without snapshots)
   const currentRatios = targets
     ? (targets.preset === 'custom' ? targets.customMacroRatios : (PRESETS[targets.preset] || PRESETS.balanced))
     : PRESETS.balanced
@@ -66,7 +139,6 @@ export default function History() {
         )
         const d = new Date(date + 'T12:00:00')
 
-        // Use snapshot targets for past days, current for today
         let dayTargets = targets
         if (date !== todayKey && targetSnapshot) {
           dayTargets = targetSnapshot
@@ -160,12 +232,7 @@ export default function History() {
                   <Label value={`Weight (${weightUnit})`} position="insideRight" offset={0} style={{ fontSize: 10, fill: '#999' }} angle={90} />
                 </YAxis>
               )}
-              <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #eee' }}
-                formatter={(val, name) => {
-                  if (name === 'Weight') return [`${val} ${weightUnit}`, name]
-                  if (mode === 'calories') return [`${val} cal`, name]
-                  return [`${val}g`, name]
-                }} />
+              <Tooltip content={<CustomTooltip mode={mode} weightUnit={weightUnit} />} />
 
               {mode === 'calories' ? (
                 <>
