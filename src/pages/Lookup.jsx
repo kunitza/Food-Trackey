@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useFirestore } from '../hooks/useFirestore'
 import { searchFoods, lookupBarcode } from '../utils/foodApi'
-import { calcFoodMacros, calcCalories } from '../utils/macros'
+import { calcFoodMacros, calcCalories, gramsToOz, ozToGrams } from '../utils/macros'
 import BarcodeScanner from '../components/BarcodeScanner'
 
 export default function Lookup() {
@@ -12,12 +12,15 @@ export default function Lookup() {
   const [searching, setSearching] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [selectedFood, setSelectedFood] = useState(null)
-  const [quantity, setQuantity] = useState('')
+  const [multiplier, setMultiplier] = useState(1)
+  const [customMultiplier, setCustomMultiplier] = useState('')
+  const [servingUnit, setServingUnit] = useState('g') // 'g' or 'oz'
   const [showCustomForm, setShowCustomForm] = useState(false)
   const [logged, setLogged] = useState('')
   const [scanStatus, setScanStatus] = useState('')
-  const [tab, setTab] = useState('recents') // 'recents' | 'favorites'
+  const [tab, setTab] = useState('recents')
   const searchTimeout = useRef(null)
+  const resultsRef = useRef(null)
 
   // Recents: foods logged in last 3 days
   const recents = useMemo(() => {
@@ -28,13 +31,12 @@ export default function Lookup() {
       .slice(0, 15)
   }, [foodHistory])
 
-  // Favorites: most frequently logged (all of food history sorted by frequency)
+  // Favorites: most frequently logged
   const favorites = useMemo(() => {
     const counts = {}
     foodHistory.forEach(f => {
       counts[f.name] = (counts[f.name] || 0) + 1
     })
-    // Sort foodHistory by count (deduplicated)
     const seen = new Set()
     return foodHistory
       .filter(f => {
@@ -46,12 +48,18 @@ export default function Lookup() {
       .slice(0, 15)
   }, [foodHistory])
 
-  // Search with debounce
+  // Search with debounce + scroll to top on query change
   useEffect(() => {
     if (!query.trim()) {
       setResults([])
       return
     }
+
+    // Scroll results to top when query changes
+    if (resultsRef.current) {
+      resultsRef.current.scrollTop = 0
+    }
+
     clearTimeout(searchTimeout.current)
     searchTimeout.current = setTimeout(async () => {
       setSearching(true)
@@ -60,7 +68,7 @@ export default function Lookup() {
         f.name.toLowerCase().includes(query.toLowerCase())
       ).map(f => ({ ...f, source: 'user-custom' }))
 
-      // Search Open Food Facts
+      // Search USDA + Open Food Facts (combined)
       const apiResults = await searchFoods(query)
 
       setResults([...customResults, ...apiResults])
@@ -75,8 +83,7 @@ export default function Lookup() {
     setScanStatus('Looking up barcode...')
     const food = await lookupBarcode(barcode)
     if (food) {
-      setSelectedFood(food)
-      setQuantity(food.servingSizeGrams || 100)
+      selectFood(food)
       setScanStatus('')
     } else {
       setScanStatus('Barcode not found. Try searching by name or add a custom food.')
@@ -85,7 +92,9 @@ export default function Lookup() {
 
   function selectFood(food) {
     setSelectedFood(food)
-    setQuantity(food.servingSizeGrams || 100)
+    setMultiplier(1)
+    setCustomMultiplier('')
+    setServingUnit('g')
     setScanStatus('')
   }
 
@@ -99,18 +108,21 @@ export default function Lookup() {
       servingSizeGrams: food.servingSizeGrams || 100,
       source: food.source || 'open-food-facts',
     })
-    setQuantity(food.servingSizeGrams || 100)
+    setMultiplier(1)
+    setCustomMultiplier('')
+    setServingUnit('g')
   }
 
   async function handleLog() {
     if (!selectedFood) return
-    const qty = Number(quantity) || selectedFood.servingSizeGrams || 100
+    const effectiveMult = customMultiplier !== '' ? (Number(customMultiplier) || 1) : multiplier
+    const qty = (selectedFood.servingSizeGrams || 100) * effectiveMult
     const macros = calcFoodMacros(selectedFood, qty)
 
     await addFood({
       name: selectedFood.name,
       servingSizeGrams: selectedFood.servingSizeGrams || 100,
-      quantity: qty,
+      quantity: Math.round(qty * 10) / 10,
       protein: macros.protein,
       carbs: macros.carbs,
       fat: macros.fat,
@@ -120,7 +132,8 @@ export default function Lookup() {
 
     setLogged(selectedFood.name)
     setSelectedFood(null)
-    setQuantity('')
+    setMultiplier(1)
+    setCustomMultiplier('')
     setQuery('')
     setResults([])
     setTimeout(() => setLogged(''), 2500)
@@ -179,8 +192,12 @@ export default function Lookup() {
       {selectedFood && (
         <FoodDetail
           food={selectedFood}
-          quantity={quantity}
-          setQuantity={setQuantity}
+          multiplier={multiplier}
+          setMultiplier={setMultiplier}
+          customMultiplier={customMultiplier}
+          setCustomMultiplier={setCustomMultiplier}
+          servingUnit={servingUnit}
+          setServingUnit={setServingUnit}
           onLog={handleLog}
           onCancel={() => setSelectedFood(null)}
         />
@@ -192,7 +209,7 @@ export default function Lookup() {
           <h3 className="font-display text-xs font-bold text-brand-dark/60 uppercase tracking-wider mb-2">
             Search Results
           </h3>
-          <div className="space-y-1.5 max-h-80 overflow-y-auto">
+          <div ref={resultsRef} className="space-y-1.5 max-h-80 overflow-y-auto">
             {results.map((food, i) => (
               <FoodRow key={`${food.id}-${i}`} food={food} onClick={() => selectFood(food)} />
             ))}
@@ -226,10 +243,9 @@ export default function Lookup() {
         />
       )}
 
-      {/* Recents & Favorites (when not searching) */}
+      {/* Recents & Favorites */}
       {!selectedFood && !query.trim() && !showCustomForm && (
         <>
-          {/* Tab Toggle */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
             {['recents', 'favorites'].map((t) => (
               <button
@@ -272,7 +288,6 @@ export default function Lookup() {
             </div>
           )}
 
-          {/* Add custom food button */}
           <button
             onClick={() => setShowCustomForm(true)}
             className="w-full py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 font-medium hover:border-brand-purple hover:text-brand-purple transition-colors"
@@ -309,6 +324,9 @@ function FoodRow({ food, onClick }) {
         {food.source === 'user-custom' && (
           <span className="text-brand-purple font-semibold">Custom</span>
         )}
+        {food.source === 'usda' && (
+          <span className="text-brand-green font-semibold">USDA</span>
+        )}
         {food.servingSizeLabel && (
           <span className="text-gray-400">{food.servingSizeLabel}</span>
         )}
@@ -317,52 +335,90 @@ function FoodRow({ food, onClick }) {
   )
 }
 
-function FoodDetail({ food, quantity, setQuantity, onLog, onCancel }) {
-  const qty = Number(quantity) || food.servingSizeGrams || 100
-  const macros = calcFoodMacros(food, qty)
+function FoodDetail({ food, multiplier, setMultiplier, customMultiplier, setCustomMultiplier, servingUnit, setServingUnit, onLog, onCancel }) {
+  const effectiveMult = customMultiplier !== '' ? (Number(customMultiplier) || 1) : multiplier
+  const totalGrams = (food.servingSizeGrams || 100) * effectiveMult
+  const macros = calcFoodMacros(food, totalGrams)
+
+  const servingSizeDisplay = servingUnit === 'oz'
+    ? gramsToOz(food.servingSizeGrams || 100)
+    : (food.servingSizeGrams || 100)
+
+  function handleMultiplierButton(val) {
+    setMultiplier(val)
+    setCustomMultiplier('')
+  }
 
   return (
     <div className="bg-white rounded-2xl p-4 border border-brand-purple/20 shadow-sm space-y-3">
       <div className="flex items-start justify-between">
         <div>
           <h3 className="font-display text-base font-bold text-brand-dark">{food.name}</h3>
-          <p className="text-[10px] text-gray-400 mt-0.5">
-            Per serving: {food.servingSizeGrams || 100}g
-            {food.servingSizeLabel && ` (${food.servingSizeLabel})`}
-          </p>
         </div>
         <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
       </div>
 
-      {/* Quantity Input */}
-      <div className="flex items-center gap-3">
-        <label className="text-xs font-medium text-gray-500">Quantity</label>
-        <div className="flex items-center gap-1">
-          <input
-            type="number"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            className="w-20 px-3 py-2 border border-gray-200 rounded-lg text-sm text-center focus:outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/30"
-          />
-          <span className="text-xs text-gray-400">grams</span>
+      {/* Serving size with unit toggle */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-gray-500">Serving size:</span>
+        <span className="text-sm font-semibold text-brand-dark tabular-nums">
+          {Math.round(servingSizeDisplay * 10) / 10}
+        </span>
+        <div className="flex bg-gray-100 rounded-md p-0.5">
+          <button
+            onClick={() => setServingUnit('g')}
+            className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${
+              servingUnit === 'g' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
+            }`}
+          >
+            g
+          </button>
+          <button
+            onClick={() => setServingUnit('oz')}
+            className={`px-2 py-0.5 text-[10px] font-bold rounded transition-all ${
+              servingUnit === 'oz' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
+            }`}
+          >
+            oz
+          </button>
         </div>
-        {/* Quick quantity buttons */}
-        <div className="flex gap-1 ml-auto">
-          {[0.5, 1, 1.5, 2].map((mult) => (
+      </div>
+
+      {/* Multiplier: buttons + open input */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-gray-500"># servings:</span>
+        <div className="flex gap-1">
+          {[0.5, 1, 2].map((mult) => (
             <button
               key={mult}
-              onClick={() => setQuantity(Math.round((food.servingSizeGrams || 100) * mult))}
-              className={`px-2 py-1 text-[10px] rounded font-medium transition-colors ${
-                Number(quantity) === Math.round((food.servingSizeGrams || 100) * mult)
+              onClick={() => handleMultiplierButton(mult)}
+              className={`px-2.5 py-1 text-[11px] rounded-md font-semibold transition-colors ${
+                customMultiplier === '' && multiplier === mult
                   ? 'bg-brand-purple text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {mult === 1 ? '1×' : `${mult}×`}
+              {mult === 1 ? '1x' : `${mult}x`}
             </button>
           ))}
         </div>
+        <input
+          type="number"
+          value={customMultiplier}
+          onChange={(e) => setCustomMultiplier(e.target.value)}
+          placeholder="Other"
+          className="w-16 px-2 py-1 border border-gray-200 rounded-md text-xs text-center focus:outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/30"
+          step="0.1"
+          min="0.1"
+        />
       </div>
+
+      {/* Total amount display */}
+      <p className="text-[10px] text-gray-400">
+        Total: {Math.round(totalGrams)}g
+        {servingUnit === 'oz' && ` (${Math.round(gramsToOz(totalGrams) * 10) / 10} oz)`}
+        {' '}&middot; {effectiveMult}x serving
+      </p>
 
       {/* Macro Preview */}
       <div className="grid grid-cols-5 gap-2">

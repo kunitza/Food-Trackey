@@ -50,12 +50,15 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-[#faf9f8]">
       <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <h1 className="font-display text-3xl font-extrabold text-brand-dark tracking-tight mb-1">
-            Macro Tracker
-          </h1>
-          <p className="text-sm text-gray-400">Track your nutrition, hit your targets.</p>
+        <div className="flex justify-center mb-8">
+          <img
+            src="/logofullsmall.png"
+            alt="Food Trackey"
+            className="h-14"
+          />
         </div>
+
+        <p className="text-sm text-gray-400 text-center mb-6">Track your nutrition, hit your targets.</p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <input

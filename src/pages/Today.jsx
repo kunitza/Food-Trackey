@@ -128,70 +128,71 @@ export default function Today() {
             <p className="text-gray-300 text-xs mt-1">Use the Lookup tab to add food.</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {todayFoods.map((food) => (
               <div
                 key={food.id}
-                className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm"
+                className="bg-white rounded-xl px-3 py-2 border border-gray-100 shadow-sm"
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-brand-dark truncate">{food.name}</p>
-                    <div className="flex gap-3 mt-1 text-[11px] text-gray-500">
-                      <span>{calcCalories(food)} cal</span>
-                      <span className="text-brand-dark/60">P:{Math.round(food.protein || 0)}g</span>
-                      <span className="text-brand-purple/80">C:{Math.round(food.carbs || 0)}g</span>
-                      <span className="text-brand-tan">F:{Math.round(food.fat || 0)}g</span>
-                      {food.fiber > 0 && <span className="text-gray-400">Fb:{Math.round(food.fiber)}g</span>}
-                    </div>
-                    {food.quantity && (
-                      <p className="text-[10px] text-gray-400 mt-0.5">{food.quantity}g serving</p>
-                    )}
+                {editingId === food.id ? (
+                  /* Edit mode */
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-brand-dark truncate flex-1 min-w-0">{food.name}</p>
+                    <input
+                      type="number"
+                      value={editQty}
+                      onChange={(e) => setEditQty(e.target.value)}
+                      className="w-16 px-2 py-1 border border-gray-200 rounded text-xs text-center focus:outline-none focus:border-brand-purple"
+                      autoFocus
+                    />
+                    <span className="text-[10px] text-gray-400">g</span>
+                    <button
+                      onClick={() => saveEdit(food)}
+                      className="p-1 text-brand-green hover:bg-brand-green/10 rounded"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="p-1 text-gray-400 hover:bg-gray-100 rounded"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
                   </div>
-                  <div className="flex gap-1 shrink-0">
-                    {editingId === food.id ? (
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          value={editQty}
-                          onChange={(e) => setEditQty(e.target.value)}
-                          className="w-16 px-2 py-1 border border-gray-200 rounded text-xs text-center focus:outline-none focus:border-brand-purple"
-                          autoFocus
-                        />
-                        <span className="text-[10px] text-gray-400">g</span>
-                        <button
-                          onClick={() => saveEdit(food)}
-                          className="p-1 text-brand-green hover:bg-brand-green/10 rounded"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-                        </button>
-                        <button
-                          onClick={() => setEditingId(null)}
-                          className="p-1 text-gray-400 hover:bg-gray-100 rounded"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
+                ) : (
+                  /* Normal display - compact 2 lines */
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-semibold text-brand-dark truncate">{food.name}</p>
+                        <span className="text-xs font-bold text-brand-dark/70 tabular-nums shrink-0">{calcCalories(food)} cal</span>
                       </div>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => handleEdit(food)}
-                          className="p-1.5 text-gray-400 hover:text-brand-purple hover:bg-brand-purple/10 rounded-lg transition-colors"
-                          title="Edit quantity"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
-                        <button
-                          onClick={() => removeFood(food)}
-                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Remove"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                      </>
-                    )}
+                      <div className="flex gap-3 mt-0.5 text-[10px] text-gray-500">
+                        <span className="text-brand-dark/60">P:{Math.round(food.protein || 0)}g</span>
+                        <span className="text-brand-purple/80">C:{Math.round(food.carbs || 0)}g</span>
+                        <span className="text-brand-tan">F:{Math.round(food.fat || 0)}g</span>
+                        {food.fiber > 0 && <span className="text-gray-400">Fb:{Math.round(food.fiber)}g</span>}
+                        {food.quantity && <span className="text-gray-400 ml-auto">{food.quantity}g</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-0.5 shrink-0">
+                      <button
+                        onClick={() => handleEdit(food)}
+                        className="p-1.5 text-gray-400 hover:text-brand-purple hover:bg-brand-purple/10 rounded-lg transition-colors"
+                        title="Edit quantity"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button
+                        onClick={() => removeFood(food)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Remove"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             ))}
           </div>

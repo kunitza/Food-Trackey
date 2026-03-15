@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { useFirestore } from '../hooks/useFirestore'
-import { calcCalories, getDateKey, calcMacroGrams } from '../utils/macros'
+import { calcCalories, getTodayKey, calcMacroGrams, lbsToKg } from '../utils/macros'
+import { getLocalDateStr } from '../utils/timezone'
 import { PRESETS } from '../utils/macros'
 
 export default function History() {
-  const { getMealsForDateRange, targets } = useFirestore()
+  const { getMealsForDateRange, targets, getWeightForDateRange, weightLog } = useFirestore()
   const [days, setDays] = useState(7)
-  const [mode, setMode] = useState('calories') // 'calories' | 'grams'
+  const [mode, setMode] = useState('calories')
+  const [showWeight, setShowWeight] = useState(false)
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
+
+  const weightUnit = weightLog?.preferredUnit || 'lbs'
 
   const ratios = targets
     ? (targets.preset === 'custom' ? targets.customMacroRatios : (PRESETS[targets.preset] || PRESETS.balanced))
@@ -25,7 +29,18 @@ export default function History() {
       const end = new Date()
       const start = new Date()
       start.setDate(start.getDate() - (days - 1))
-      const meals = await getMealsForDateRange(getDateKey(start), getDateKey(end))
+
+      const startKey = getLocalDateStr(start)
+      const endKey = getLocalDateStr(end)
+
+      const meals = await getMealsForDateRange(startKey, endKey)
+      const weightEntries = getWeightForDateRange(startKey, endKey)
+
+      // Create a map of weight by date
+      const weightByDate = {}
+      weightEntries.forEach(e => {
+        weightByDate[e.date] = weightUnit === 'kg' ? lbsToKg(e.weightLbs) : e.weightLbs
+      })
 
       const chartData = meals.map(({ date, foods }) => {
         const totals = foods.reduce(
@@ -50,13 +65,14 @@ export default function History() {
           proteinCal: Math.round(totals.protein * 4),
           carbsCal: Math.round(totals.carbs * 4),
           fatCal: Math.round(totals.fat * 9),
+          weight: weightByDate[date] || null,
         }
       })
       setData(chartData)
       setLoading(false)
     }
     load()
-  }, [days, getMealsForDateRange])
+  }, [days, getMealsForDateRange, getWeightForDateRange, weightUnit])
 
   const avgCalories = useMemo(() => {
     if (data.length === 0) return 0
@@ -67,6 +83,8 @@ export default function History() {
     if (data.length === 0) return 0
     return Math.round(data.reduce((sum, d) => sum + d.protein, 0) / data.length)
   }, [data])
+
+  const hasWeightData = data.some(d => d.weight !== null)
 
   return (
     <div className="space-y-4 pb-2">
@@ -88,19 +106,33 @@ export default function History() {
         </div>
       </div>
 
-      {/* Mode Toggle */}
-      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-        {['calories', 'grams'].map((m) => (
+      {/* Mode Toggle + Weight Toggle */}
+      <div className="flex gap-2">
+        <div className="flex-1 flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          {['calories', 'grams'].map((m) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
+                mode === m ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
+              }`}
+            >
+              {m === 'calories' ? 'Calories' : 'Grams'}
+            </button>
+          ))}
+        </div>
+        {hasWeightData && (
           <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
-              mode === m ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
+            onClick={() => setShowWeight(!showWeight)}
+            className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
+              showWeight
+                ? 'bg-brand-purple text-white'
+                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}
           >
-            {m === 'calories' ? 'Calories' : 'Grams'}
+            Weight
           </button>
-        ))}
+        )}
       </div>
 
       {/* Chart */}
@@ -115,61 +147,77 @@ export default function History() {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
-            {mode === 'calories' ? (
-              <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: -15 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 9, fill: '#999' }}
-                  tickLine={false}
-                  axisLine={false}
-                />
+            <ComposedChart data={data} margin={{ top: 5, right: showWeight ? 35 : 5, bottom: 5, left: -15 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 9, fill: '#999' }}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                yAxisId="left"
+                tick={{ fontSize: 9, fill: '#999' }}
+                tickLine={false}
+                axisLine={false}
+              />
+              {showWeight && (
                 <YAxis
-                  tick={{ fontSize: 9, fill: '#999' }}
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 9, fill: '#846075' }}
                   tickLine={false}
                   axisLine={false}
+                  domain={['dataMin - 5', 'dataMax + 5']}
                 />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #eee' }}
-                  formatter={(val, name) => [`${val} cal`, name]}
+              )}
+              <Tooltip
+                contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #eee' }}
+                formatter={(val, name) => {
+                  if (name === 'Weight') return [`${val} ${weightUnit}`, name]
+                  if (mode === 'calories') return [`${val} cal`, name]
+                  return [`${val}g`, name]
+                }}
+              />
+
+              {mode === 'calories' ? (
+                <>
+                  <Area yAxisId="left" type="monotone" dataKey="proteinCal" stackId="1" name="Protein" stroke="#87D68D" fill="#87D68D" fillOpacity={0.7} />
+                  <Area yAxisId="left" type="monotone" dataKey="carbsCal" stackId="1" name="Carbs" stroke="#846075" fill="#846075" fillOpacity={0.6} />
+                  <Area yAxisId="left" type="monotone" dataKey="fatCal" stackId="1" name="Fat" stroke="#DBD3D8" fill="#DBD3D8" fillOpacity={0.7} />
+                </>
+              ) : (
+                <>
+                  <Area yAxisId="left" type="monotone" dataKey="protein" stackId="1" name="Protein" stroke="#87D68D" fill="#87D68D" fillOpacity={0.7} />
+                  <Area yAxisId="left" type="monotone" dataKey="carbs" stackId="1" name="Carbs" stroke="#846075" fill="#846075" fillOpacity={0.6} />
+                  <Area yAxisId="left" type="monotone" dataKey="fat" stackId="1" name="Fat" stroke="#DBD3D8" fill="#DBD3D8" fillOpacity={0.7} />
+                  <Area yAxisId="left" type="monotone" dataKey="fiber" stackId="1" name="Fiber" stroke="#D4AA7D" fill="#D4AA7D" fillOpacity={0.5} />
+                </>
+              )}
+
+              {showWeight && (
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="weight"
+                  name="Weight"
+                  stroke="#846075"
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: '#846075' }}
+                  connectNulls
                 />
-                <Area type="monotone" dataKey="proteinCal" stackId="1" name="Protein" stroke="#87D68D" fill="#87D68D" fillOpacity={0.7} />
-                <Area type="monotone" dataKey="carbsCal" stackId="1" name="Carbs" stroke="#846075" fill="#846075" fillOpacity={0.6} />
-                <Area type="monotone" dataKey="fatCal" stackId="1" name="Fat" stroke="#DBD3D8" fill="#DBD3D8" fillOpacity={0.7} />
-              </AreaChart>
-            ) : (
-              <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: -15 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontSize: 9, fill: '#999' }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 9, fill: '#999' }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #eee' }}
-                  formatter={(val, name) => [`${val}g`, name]}
-                />
-                <Area type="monotone" dataKey="protein" stackId="1" name="Protein" stroke="#87D68D" fill="#87D68D" fillOpacity={0.7} />
-                <Area type="monotone" dataKey="carbs" stackId="1" name="Carbs" stroke="#846075" fill="#846075" fillOpacity={0.6} />
-                <Area type="monotone" dataKey="fat" stackId="1" name="Fat" stroke="#DBD3D8" fill="#DBD3D8" fillOpacity={0.7} />
-                <Area type="monotone" dataKey="fiber" stackId="1" name="Fiber" stroke="#D4AA7D" fill="#D4AA7D" fillOpacity={0.5} />
-              </AreaChart>
-            )}
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
         )}
 
         {/* Legend */}
-        <div className="flex items-center justify-center gap-4 mt-2">
+        <div className="flex items-center justify-center gap-4 mt-2 flex-wrap">
           <LegendItem color="#87D68D" label="Protein" />
           <LegendItem color="#846075" label="Carbs" />
           <LegendItem color="#DBD3D8" label="Fat" />
           {mode === 'grams' && <LegendItem color="#D4AA7D" label="Fiber" />}
+          {showWeight && <LegendItem color="#846075" label={`Weight (${weightUnit})`} line />}
         </div>
       </div>
 
@@ -200,7 +248,14 @@ export default function History() {
               <div key={day.dateRaw} className="bg-white rounded-xl px-3 py-2.5 border border-gray-100">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-semibold text-brand-dark">{day.date}</span>
-                  <span className="text-xs font-bold text-brand-dark/70">{day.calories} cal</span>
+                  <div className="flex items-center gap-3">
+                    {day.weight && (
+                      <span className="text-[10px] text-brand-purple font-semibold">
+                        {day.weight} {weightUnit}
+                      </span>
+                    )}
+                    <span className="text-xs font-bold text-brand-dark/70">{day.calories} cal</span>
+                  </div>
                 </div>
                 <div className="flex gap-3 text-[10px] text-gray-500">
                   <span>P: {day.protein}g</span>
@@ -223,10 +278,14 @@ export default function History() {
   )
 }
 
-function LegendItem({ color, label }) {
+function LegendItem({ color, label, line }) {
   return (
     <div className="flex items-center gap-1.5">
-      <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+      {line ? (
+        <div className="w-4 h-0.5 rounded" style={{ backgroundColor: color }} />
+      ) : (
+        <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: color }} />
+      )}
       <span className="text-[10px] text-gray-500 font-medium">{label}</span>
     </div>
   )
