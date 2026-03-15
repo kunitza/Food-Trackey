@@ -8,6 +8,7 @@ import Signup from './pages/Signup'
 import Today from './pages/Today'
 import Lookup from './pages/Lookup'
 import History from './pages/History'
+import Weight from './pages/Weight'
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
               <Route path="/" element={<Today />} />
               <Route path="/lookup" element={<Lookup />} />
               <Route path="/history" element={<History />} />
+              <Route path="/weight" element={<Weight />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

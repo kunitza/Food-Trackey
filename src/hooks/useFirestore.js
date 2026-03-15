@@ -4,7 +4,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
-import { getTodayKey } from '../utils/macros'
+import { getTodayKey, kgToLbs } from '../utils/macros'
 
 export function useFirestore() {
   const { user } = useAuth()
@@ -14,6 +14,7 @@ export function useFirestore() {
   const [foodHistory, setFoodHistory] = useState([])
   const [selectedDate, setSelectedDate] = useState(getTodayKey())
   const [loading, setLoading] = useState(true)
+  const [weightLog, setWeightLog] = useState({ preferredUnit: 'lbs', entries: [] })
 
   // Listen to user targets
   useEffect(() => {
@@ -62,6 +63,20 @@ export function useFirestore() {
     const unsub = onSnapshot(ref, (snap) => {
       if (snap.exists()) {
         setFoodHistory(snap.data().items || [])
+      }
+    })
+    return unsub
+  }, [user])
+
+  // Listen to weight log
+  useEffect(() => {
+    if (!user) return
+    const ref = doc(db, 'users', user.uid, 'data', 'weightLog')
+    const unsub = onSnapshot(ref, (snap) => {
+      if (snap.exists()) {
+        setWeightLog(snap.data())
+      } else {
+        setWeightLog({ preferredUnit: 'lbs', entries: [] })
       }
     })
     return unsub
@@ -154,11 +169,14 @@ export function useFirestore() {
   const getMealsForDateRange = useCallback(async (startDate, endDate) => {
     if (!user) return []
     const results = []
-    const current = new Date(startDate)
-    const end = new Date(endDate)
+    const current = new Date(startDate + 'T12:00:00')
+    const end = new Date(endDate + 'T12:00:00')
 
     while (current <= end) {
-      const dateKey = current.toISOString().split('T')[0]
+      const y = current.getFullYear()
+      const m = String(current.getMonth() + 1).padStart(2, '0')
+      const d = String(current.getDate()).padStart(2, '0')
+      const dateKey = `${y}-${m}-${d}`
       const snap = await getDoc(doc(db, 'users', user.uid, 'meals', dateKey))
       results.push({
         date: dateKey,
@@ -176,6 +194,61 @@ export function useFirestore() {
     })
   }, [user])
 
+  // ---- Weight tracking ----
+
+  const addWeightEntry = useCallback(async (weight, unit) => {
+    if (!user) return
+    const ref = doc(db, 'users', user.uid, 'data', 'weightLog')
+    const snap = await getDoc(ref)
+    const today = getTodayKey()
+
+    // Always store in lbs internally
+    const weightLbs = unit === 'kg' ? kgToLbs(weight) : Number(weight)
+
+    const entry = {
+      date: today,
+      weightLbs: Math.round(weightLbs * 10) / 10,
+      enteredUnit: unit,
+      enteredValue: Number(weight),
+    }
+
+    if (snap.exists()) {
+      const data = snap.data()
+      const entries = (data.entries || []).filter(e => e.date !== today)
+      entries.push(entry)
+      entries.sort((a, b) => a.date.localeCompare(b.date))
+      await setDoc(ref, { preferredUnit: unit, entries })
+    } else {
+      await setDoc(ref, { preferredUnit: unit, entries: [entry] })
+    }
+  }, [user])
+
+  const removeWeightEntry = useCallback(async (date) => {
+    if (!user) return
+    const ref = doc(db, 'users', user.uid, 'data', 'weightLog')
+    const snap = await getDoc(ref)
+    if (!snap.exists()) return
+    const data = snap.data()
+    const entries = (data.entries || []).filter(e => e.date !== date)
+    await setDoc(ref, { ...data, entries })
+  }, [user])
+
+  const updateWeightUnit = useCallback(async (unit) => {
+    if (!user) return
+    const ref = doc(db, 'users', user.uid, 'data', 'weightLog')
+    const snap = await getDoc(ref)
+    if (snap.exists()) {
+      await updateDoc(ref, { preferredUnit: unit })
+    } else {
+      await setDoc(ref, { preferredUnit: unit, entries: [] })
+    }
+  }, [user])
+
+  const getWeightForDateRange = useCallback((startDate, endDate) => {
+    const entries = weightLog.entries || []
+    return entries.filter(e => e.date >= startDate && e.date <= endDate)
+  }, [weightLog])
+
   return {
     targets,
     todayFoods,
@@ -192,5 +265,11 @@ export function useFirestore() {
     removeCustomFood,
     getMealsForDateRange,
     updateProfile,
+    // Weight
+    weightLog,
+    addWeightEntry,
+    removeWeightEntry,
+    updateWeightUnit,
+    getWeightForDateRange,
   }
 }
