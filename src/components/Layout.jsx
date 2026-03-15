@@ -15,23 +15,31 @@ export default function Layout() {
   const [showSettings, setShowSettings] = useState(false)
   const mainRef = useRef(null)
 
-  // Scroll main content to top on route change
+  // Scroll main content to top on every route change
   useEffect(() => {
     if (mainRef.current) {
-      mainRef.current.scrollTop = 0
+      mainRef.current.scrollTo(0, 0)
     }
   }, [location.pathname])
 
   return (
-    <div className="flex flex-col bg-[#faf9f8] max-w-lg mx-auto" style={{ height: '100dvh', minHeight: '100dvh' }}>
-      {/* Header */}
-      <header className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
+    <div
+      className="flex flex-col max-w-lg mx-auto"
+      style={{
+        height: '100dvh',
+        maxHeight: '100dvh',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        margin: '0 auto',
+        background: '#faf9f8',
+      }}
+    >
+      {/* Header - fixed at top */}
+      <header className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0 bg-[#faf9f8]">
         <div className="flex items-center gap-2">
-          <img
-            src="/marktransparent512.png"
-            alt=""
-            className="h-9 w-9"
-          />
+          <img src="/marktransparent512.png" alt="" className="h-9 w-9" />
           <span className="font-logo text-xl font-bold text-brand-dark tracking-tight">
             Food Trackey
           </span>
@@ -45,14 +53,20 @@ export default function Layout() {
         </button>
       </header>
 
-      {/* Main Content */}
-      <main ref={mainRef} className="flex-1 overflow-y-auto px-4 pb-4">
+      {/* Main Content - scrollable area between header and nav */}
+      <main
+        ref={mainRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-4"
+        style={{ minHeight: 0 }}
+      >
         <Outlet />
       </main>
 
-      {/* Bottom Nav - extra padding to clear mobile browser controls */}
-      <nav className="border-t border-gray-100 bg-white/90 backdrop-blur-lg shrink-0"
-        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)' }}>
+      {/* Bottom Nav - always pinned at bottom */}
+      <nav
+        className="shrink-0 border-t border-gray-100 bg-white/95 backdrop-blur-lg"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 14px)' }}
+      >
         <div className="flex items-center justify-around pt-2 pb-1">
           {tabs.map(({ path, label, icon: Icon }) => {
             const active = location.pathname === path
