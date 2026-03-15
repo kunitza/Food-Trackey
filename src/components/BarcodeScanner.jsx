@@ -2,21 +2,12 @@ import React, { useRef, useEffect, useState, useCallback } from 'react'
 
 export default function BarcodeScanner({ onScan, onClose }) {
   const videoRef = useRef(null)
-  const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const animRef = useRef(null)
   const [error, setError] = useState('')
-  const [jsQR, setJsQR] = useState(null)
+  const [ready, setReady] = useState(false)
   const scanningRef = useRef(true)
-
-  // Dynamic import jsQR
-  useEffect(() => {
-    import('jsqr').then(mod => {
-      setJsQR(() => mod.default || mod)
-    }).catch(() => {
-      setError('Failed to load barcode scanner library')
-    })
-  }, [])
+  const lastScanRef = useRef('')
 
   const stopCamera = useCallback(() => {
     scanningRef.current = false
@@ -28,19 +19,42 @@ export default function BarcodeScanner({ onScan, onClose }) {
   }, [])
 
   useEffect(() => {
-    if (!jsQR) return
+    let detector = null
 
-    async function startCamera() {
+    async function init() {
+      // Check for BarcodeDetector support
+      if (!('BarcodeDetector' in window)) {
+        setError(
+          'Your browser does not support barcode scanning. Please use Chrome (Android) or Safari 17.2+ (iOS) for barcode scanning, or search for foods by name.'
+        )
+        return
+      }
+
+      try {
+        detector = new BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'],
+        })
+      } catch (err) {
+        setError('Failed to initialize barcode scanner: ' + err.message)
+        return
+      }
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
         })
         streamRef.current = stream
         scanningRef.current = true
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream
-          videoRef.current.play()
-          requestAnimationFrame(scanFrame)
+          await videoRef.current.play()
+          setReady(true)
+          scanFrame()
         }
       } catch (err) {
         if (err.name === 'NotAllowedError') {
@@ -53,40 +67,36 @@ export default function BarcodeScanner({ onScan, onClose }) {
       }
     }
 
-    function isValidBarcode(data) {
-      // Must be numeric and between 8-14 digits (EAN-8, UPC-A, EAN-13, ITF-14)
-      if (!/^\d{8,14}$/.test(data)) return false
-      return true
-    }
+    async function scanFrame() {
+      if (!scanningRef.current || !videoRef.current || !streamRef.current || !detector) return
 
-    function scanFrame() {
-      if (!scanningRef.current) return
-      if (!videoRef.current || !canvasRef.current || !streamRef.current) return
-      const video = videoRef.current
-      const canvas = canvasRef.current
-      const ctx = canvas.getContext('2d', { willReadFrequently: true })
+      try {
+        if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+          const barcodes = await detector.detect(videoRef.current)
 
-      if (video.readyState === video.HAVE_ENOUGH_DATA) {
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: 'dontInvert',
-        })
-        if (code && code.data && isValidBarcode(code.data)) {
-          // Successful scan - close and return result
-          stopCamera()
-          onScan(code.data)
-          return
+          if (barcodes.length > 0) {
+            const barcode = barcodes[0]
+            const value = barcode.rawValue
+
+            // Validate: numeric, 8-14 digits (standard product barcodes)
+            if (/^\d{8,14}$/.test(value) && value !== lastScanRef.current) {
+              lastScanRef.current = value
+              stopCamera()
+              onScan(value)
+              return
+            }
+          }
         }
+      } catch (err) {
+        // BarcodeDetector.detect can throw on some frames, just skip
       }
+
       animRef.current = requestAnimationFrame(scanFrame)
     }
 
-    startCamera()
+    init()
     return stopCamera
-  }, [jsQR, onScan, stopCamera])
+  }, [onScan, stopCamera])
 
   function handleClose() {
     stopCamera()
@@ -100,10 +110,10 @@ export default function BarcodeScanner({ onScan, onClose }) {
         <p className="text-white text-sm font-medium">Scan a barcode</p>
         <button
           onClick={handleClose}
-          className="w-11 h-11 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors"
+          className="w-12 h-12 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors"
           aria-label="Close scanner"
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
             <line x1="18" y1="6" x2="6" y2="18" />
             <line x1="6" y1="6" x2="18" y2="18" />
           </svg>
@@ -112,7 +122,7 @@ export default function BarcodeScanner({ onScan, onClose }) {
 
       {error ? (
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="text-center">
+          <div className="text-center max-w-sm">
             <p className="text-white/80 text-sm mb-4">{error}</p>
             <button
               onClick={handleClose}
@@ -130,7 +140,6 @@ export default function BarcodeScanner({ onScan, onClose }) {
             playsInline
             muted
           />
-          <canvas ref={canvasRef} className="hidden" />
           {/* Scan overlay */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-64 h-40 border-2 border-white/50 rounded-2xl relative">
@@ -143,7 +152,7 @@ export default function BarcodeScanner({ onScan, onClose }) {
             </div>
           </div>
           <p className="absolute bottom-8 left-0 right-0 text-center text-white/60 text-xs">
-            Point your camera at a barcode
+            {ready ? 'Point your camera at a product barcode' : 'Starting camera...'}
           </p>
         </div>
       )}

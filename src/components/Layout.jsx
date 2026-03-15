@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import SettingsModal from './SettingsModal'
 
@@ -13,11 +13,19 @@ export default function Layout() {
   const navigate = useNavigate()
   const location = useLocation()
   const [showSettings, setShowSettings] = useState(false)
+  const mainRef = useRef(null)
+
+  // Scroll main content to top on route change
+  useEffect(() => {
+    if (mainRef.current) {
+      mainRef.current.scrollTop = 0
+    }
+  }, [location.pathname])
 
   return (
-    <div className="h-screen flex flex-col bg-[#faf9f8] max-w-lg mx-auto">
+    <div className="flex flex-col bg-[#faf9f8] max-w-lg mx-auto" style={{ height: '100dvh', minHeight: '100dvh' }}>
       {/* Header */}
-      <header className="flex items-center justify-between px-5 pt-4 pb-2">
+      <header className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
         <div className="flex items-center gap-2">
           <img
             src="/marktransparent512.png"
@@ -38,13 +46,14 @@ export default function Layout() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto px-4 pb-4">
+      <main ref={mainRef} className="flex-1 overflow-y-auto px-4 pb-4">
         <Outlet />
       </main>
 
-      {/* Bottom Nav */}
-      <nav className="bottom-nav border-t border-gray-100 bg-white/80 backdrop-blur-lg">
-        <div className="flex items-center justify-around py-2">
+      {/* Bottom Nav - extra padding to clear mobile browser controls */}
+      <nav className="border-t border-gray-100 bg-white/90 backdrop-blur-lg shrink-0"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 12px)' }}>
+        <div className="flex items-center justify-around pt-2 pb-1">
           {tabs.map(({ path, label, icon: Icon }) => {
             const active = location.pathname === path
             return (

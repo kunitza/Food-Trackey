@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useFirestore } from '../hooks/useFirestore'
 import { PRESETS, calcMacroGrams } from '../utils/macros'
@@ -14,13 +14,17 @@ export default function SettingsModal({ onClose }) {
   const [customRatios, setCustomRatios] = useState(
     targets?.customMacroRatios || { protein: 20, carbs: 40, fat: 40 }
   )
+  // Macro input mode: '%' or 'g'
+  const [macroInputMode, setMacroInputMode] = useState(targets?.macroInputMode || '%')
+  // Gram inputs (used when mode is 'g')
+  const [proteinGrams, setProteinGrams] = useState('')
+
   const [newPassword, setNewPassword] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showDeleteFinal, setShowDeleteFinal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
 
-  // Timezone state
   const detectedTz = detectTimezone()
   const currentTz = getEffectiveTimezone()
   const [selectedTz, setSelectedTz] = useState(
@@ -32,31 +36,70 @@ export default function SettingsModal({ onClose }) {
       setCalories(targets.dailyCalories || 2000)
       setPreset(targets.preset || 'balanced')
       if (targets.customMacroRatios) setCustomRatios(targets.customMacroRatios)
+      if (targets.macroInputMode) setMacroInputMode(targets.macroInputMode)
+      if (targets.proteinGramsTarget) setProteinGrams(targets.proteinGramsTarget)
     }
   }, [targets])
 
-  const currentRatios = preset === 'custom' ? customRatios : (PRESETS[preset] || PRESETS.balanced)
+  // Get the preset ratios (for distributing carbs/fat around protein)
+  const presetRatios = PRESETS[preset] || PRESETS.balanced
+
+  // Current effective ratios based on mode
+  const currentRatios = useMemo(() => {
+    if (macroInputMode === 'g' && proteinGrams && Number(calories) > 0) {
+      const pGrams = Number(proteinGrams) || 0
+      const pCal = pGrams * 4
+      const totalCal = Number(calories)
+      const pPct = Math.min(Math.round((pCal / totalCal) * 100), 100)
+      const remaining = 100 - pPct
+
+      // Distribute remaining between carbs and fat proportional to the preset's C:F ratio
+      const presetCarbsFat = presetRatios.carbs + presetRatios.fat
+      const carbsPct = presetCarbsFat > 0
+        ? Math.round(remaining * (presetRatios.carbs / presetCarbsFat))
+        : Math.round(remaining / 2)
+      const fatPct = remaining - carbsPct
+
+      return { protein: pPct, carbs: carbsPct, fat: fatPct }
+    }
+    if (preset === 'custom') return customRatios
+    return presetRatios
+  }, [macroInputMode, proteinGrams, calories, preset, customRatios, presetRatios])
+
   const macroGrams = calcMacroGrams(calories, currentRatios)
+
+  // When switching to grams mode, initialize protein grams from current targets
+  useEffect(() => {
+    if (macroInputMode === 'g' && !proteinGrams && calories) {
+      const currentPGrams = calcMacroGrams(calories, preset === 'custom' ? customRatios : presetRatios).protein
+      setProteinGrams(currentPGrams)
+    }
+  }, [macroInputMode])
 
   async function handleSave() {
     setSaving(true)
     try {
-      await updateTargets({
+      const targetData = {
         dailyCalories: Number(calories),
-        preset,
-        customMacroRatios: preset === 'custom' ? customRatios : currentRatios,
-      })
-      await updateProfile(name)
+        preset: macroInputMode === 'g' ? 'custom' : preset,
+        customMacroRatios: currentRatios,
+        macroInputMode,
+      }
+      // Store protein grams target if in grams mode
+      if (macroInputMode === 'g') {
+        targetData.proteinGramsTarget = Number(proteinGrams) || 0
+      }
 
-      // Save timezone preference
+      await updateTargets(targetData)
+      await updateProfile(name)
       setTimezoneOverride(selectedTz || null)
 
-      setMessage('Saved!')
-      setTimeout(() => setMessage(''), 2000)
+      // Close settings after successful save
+      onClose()
     } catch (err) {
       setMessage('Error saving: ' + err.message)
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   async function handleChangePassword() {
@@ -89,6 +132,10 @@ export default function SettingsModal({ onClose }) {
 
   const customTotal = customRatios.protein + customRatios.carbs + customRatios.fat
 
+  const canSave = macroInputMode === 'g'
+    ? true
+    : (preset !== 'custom' || customTotal === 100)
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center modal-backdrop bg-black/30" onClick={onClose}>
       <div
@@ -117,9 +164,7 @@ export default function SettingsModal({ onClose }) {
 
           {/* Timezone */}
           <Section title="Timezone">
-            <p className="text-xs text-gray-400 mb-2">
-              Detected: {detectedTz}
-            </p>
+            <p className="text-xs text-gray-400 mb-2">Detected: {detectedTz}</p>
             <select
               value={selectedTz}
               onChange={(e) => setSelectedTz(e.target.value)}
@@ -143,40 +188,126 @@ export default function SettingsModal({ onClose }) {
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/30 mb-3"
             />
 
-            <label className="block text-xs font-medium text-gray-500 mb-2">Macro Preset</label>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              {['high-protein', 'balanced', 'high-carb', 'high-fat', 'custom'].map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPreset(p)}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                    preset === p
-                      ? 'bg-brand-purple text-white shadow-sm'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {p.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                </button>
-              ))}
+            {/* Macro Input Mode Toggle */}
+            <label className="block text-xs font-medium text-gray-500 mb-2">Macro Input</label>
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 mb-3">
+              <button
+                onClick={() => setMacroInputMode('%')}
+                className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
+                  macroInputMode === '%' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                Set by %
+              </button>
+              <button
+                onClick={() => setMacroInputMode('g')}
+                className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
+                  macroInputMode === 'g' ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                Set by Grams
+              </button>
             </div>
 
-            {preset === 'custom' && (
-              <div className="space-y-2 mb-3 p-3 bg-gray-50 rounded-lg">
-                {['protein', 'carbs', 'fat'].map((f) => (
-                  <div key={f} className="flex items-center gap-2">
-                    <span className="text-xs font-medium text-gray-600 w-16 capitalize">{f}</span>
+            {macroInputMode === '%' && (
+              <>
+                <label className="block text-xs font-medium text-gray-500 mb-2">Macro Preset</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {['high-protein', 'balanced', 'high-carb', 'high-fat', 'custom'].map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPreset(p)}
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                        preset === p
+                          ? 'bg-brand-purple text-white shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                    </button>
+                  ))}
+                </div>
+
+                {preset === 'custom' && (
+                  <div className="space-y-2 mb-3 p-3 bg-gray-50 rounded-lg">
+                    {['protein', 'carbs', 'fat'].map((f) => (
+                      <div key={f} className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-600 w-16 capitalize">{f}</span>
+                        <input
+                          type="number"
+                          value={customRatios[f]}
+                          onChange={(e) => handleCustomRatio(f, e.target.value)}
+                          className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-sm text-center focus:outline-none focus:border-brand-purple"
+                        />
+                        <span className="text-xs text-gray-400">%</span>
+                      </div>
+                    ))}
+                    <p className={`text-xs font-medium ${customTotal === 100 ? 'text-brand-green' : 'text-red-500'}`}>
+                      Total: {customTotal}% {customTotal !== 100 && '(must equal 100%)'}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {macroInputMode === 'g' && (
+              <div className="space-y-3 mb-3">
+                <label className="block text-xs font-medium text-gray-500 mb-2">Macro Preset (for carbs/fat distribution)</label>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {['high-protein', 'balanced', 'high-carb', 'high-fat'].map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setPreset(p)}
+                      className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
+                        preset === p
+                          ? 'bg-brand-purple text-white shadow-sm'
+                          : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {p.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="p-3 bg-gray-50 rounded-lg space-y-3">
+                  {/* Protein grams input */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-600 w-16">Protein</span>
                     <input
                       type="number"
-                      value={customRatios[f]}
-                      onChange={(e) => handleCustomRatio(f, e.target.value)}
+                      value={proteinGrams}
+                      onChange={(e) => setProteinGrams(e.target.value)}
                       className="flex-1 px-2 py-1.5 border border-gray-200 rounded text-sm text-center focus:outline-none focus:border-brand-purple"
+                      placeholder="grams"
                     />
-                    <span className="text-xs text-gray-400">%</span>
+                    <span className="text-xs text-gray-400">g</span>
+                    <span className="text-[10px] text-gray-400 w-10 text-right">{currentRatios.protein}%</span>
                   </div>
-                ))}
-                <p className={`text-xs font-medium ${customTotal === 100 ? 'text-brand-green' : 'text-red-500'}`}>
-                  Total: {customTotal}% {customTotal !== 100 && '(must equal 100%)'}
-                </p>
+
+                  {/* Carbs (auto-calculated) */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-600 w-16">Carbs</span>
+                    <div className="flex-1 px-2 py-1.5 bg-gray-100 rounded text-sm text-center text-gray-500">
+                      {macroGrams.carbs}
+                    </div>
+                    <span className="text-xs text-gray-400">g</span>
+                    <span className="text-[10px] text-gray-400 w-10 text-right">{currentRatios.carbs}%</span>
+                  </div>
+
+                  {/* Fat (auto-calculated) */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-600 w-16">Fat</span>
+                    <div className="flex-1 px-2 py-1.5 bg-gray-100 rounded text-sm text-center text-gray-500">
+                      {macroGrams.fat}
+                    </div>
+                    <span className="text-xs text-gray-400">g</span>
+                    <span className="text-[10px] text-gray-400 w-10 text-right">{currentRatios.fat}%</span>
+                  </div>
+
+                  <p className="text-[10px] text-gray-400">
+                    Carbs and fat are auto-distributed based on the {preset.replace('-', ' ')} preset ratio. Change the preset above to adjust the split.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -265,7 +396,7 @@ export default function SettingsModal({ onClose }) {
           {/* Save */}
           <button
             onClick={handleSave}
-            disabled={saving || (preset === 'custom' && customTotal !== 100)}
+            disabled={saving || !canSave}
             className="w-full py-3 bg-brand-dark text-white font-semibold rounded-xl hover:bg-brand-dark/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {saving ? 'Saving...' : 'Save Changes'}
@@ -277,7 +408,7 @@ export default function SettingsModal({ onClose }) {
             </p>
           )}
 
-          <p className="text-center text-[10px] text-gray-300 pb-2">Food Trackey v1.1.0</p>
+          <p className="text-center text-[10px] text-gray-300 pb-2">Food Trackey v1.2.0</p>
         </div>
       </div>
     </div>
