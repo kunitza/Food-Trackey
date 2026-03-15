@@ -7,6 +7,7 @@ export default function BarcodeScanner({ onScan, onClose }) {
   const animRef = useRef(null)
   const [error, setError] = useState('')
   const [jsQR, setJsQR] = useState(null)
+  const scanningRef = useRef(true)
 
   // Dynamic import jsQR
   useEffect(() => {
@@ -18,6 +19,7 @@ export default function BarcodeScanner({ onScan, onClose }) {
   }, [])
 
   const stopCamera = useCallback(() => {
+    scanningRef.current = false
     if (animRef.current) cancelAnimationFrame(animRef.current)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(t => t.stop())
@@ -34,6 +36,7 @@ export default function BarcodeScanner({ onScan, onClose }) {
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
         })
         streamRef.current = stream
+        scanningRef.current = true
         if (videoRef.current) {
           videoRef.current.srcObject = stream
           videoRef.current.play()
@@ -41,7 +44,7 @@ export default function BarcodeScanner({ onScan, onClose }) {
         }
       } catch (err) {
         if (err.name === 'NotAllowedError') {
-          setError('Camera access denied. Please allow camera access.')
+          setError('Camera access denied. Please allow camera access in your browser settings.')
         } else if (err.name === 'NotFoundError') {
           setError('No camera found on this device.')
         } else {
@@ -50,7 +53,14 @@ export default function BarcodeScanner({ onScan, onClose }) {
       }
     }
 
+    function isValidBarcode(data) {
+      // Must be numeric and between 8-14 digits (EAN-8, UPC-A, EAN-13, ITF-14)
+      if (!/^\d{8,14}$/.test(data)) return false
+      return true
+    }
+
     function scanFrame() {
+      if (!scanningRef.current) return
       if (!videoRef.current || !canvasRef.current || !streamRef.current) return
       const video = videoRef.current
       const canvas = canvasRef.current
@@ -64,7 +74,8 @@ export default function BarcodeScanner({ onScan, onClose }) {
         const code = jsQR(imageData.data, imageData.width, imageData.height, {
           inversionAttempts: 'dontInvert',
         })
-        if (code && code.data) {
+        if (code && code.data && isValidBarcode(code.data)) {
+          // Successful scan - close and return result
           stopCamera()
           onScan(code.data)
           return
@@ -84,9 +95,19 @@ export default function BarcodeScanner({ onScan, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Header with large close button */}
       <div className="flex items-center justify-between px-4 py-3 bg-black/80">
         <p className="text-white text-sm font-medium">Scan a barcode</p>
-        <button onClick={handleClose} className="text-white/70 hover:text-white text-2xl">&times;</button>
+        <button
+          onClick={handleClose}
+          className="w-11 h-11 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 active:bg-white/40 transition-colors"
+          aria-label="Close scanner"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
       </div>
 
       {error ? (
@@ -95,7 +116,7 @@ export default function BarcodeScanner({ onScan, onClose }) {
             <p className="text-white/80 text-sm mb-4">{error}</p>
             <button
               onClick={handleClose}
-              className="px-6 py-2 bg-white/20 text-white rounded-lg text-sm"
+              className="px-6 py-3 bg-white/20 text-white rounded-lg text-sm font-medium"
             >
               Close
             </button>

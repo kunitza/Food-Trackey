@@ -6,6 +6,7 @@ const tabs = [
   { path: '/', label: 'Today', icon: TodayIcon },
   { path: '/lookup', label: 'Lookup', icon: SearchIcon },
   { path: '/history', label: 'History', icon: ChartIcon },
+  { path: '/weight', label: 'Weight', icon: WeightIcon },
 ]
 
 export default function Layout() {
@@ -17,9 +18,12 @@ export default function Layout() {
     <div className="h-screen flex flex-col bg-[#faf9f8] max-w-lg mx-auto">
       {/* Header */}
       <header className="flex items-center justify-between px-5 pt-4 pb-2">
-        <h1 className="font-display text-xl font-bold text-brand-dark tracking-tight">
-          Macro Tracker
-        </h1>
+        <img
+          src="/headerlogo80.png"
+          alt="Food Trackey"
+          className="h-8"
+          style={{ imageRendering: 'auto' }}
+        />
         <button
           onClick={() => setShowSettings(true)}
           className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-brand-mauve/50 transition-colors"
@@ -43,7 +47,7 @@ export default function Layout() {
               <button
                 key={path}
                 onClick={() => navigate(path)}
-                className={`flex flex-col items-center gap-0.5 px-5 py-1.5 rounded-xl transition-all ${
+                className={`flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all ${
                   active
                     ? 'text-brand-purple'
                     : 'text-gray-400 hover:text-gray-600'
@@ -88,6 +92,18 @@ function ChartIcon({ active }) {
       <line x1="18" y1="20" x2="18" y2="10" />
       <line x1="12" y1="20" x2="12" y2="4" />
       <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  )
+}
+
+function WeightIcon({ active }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.5 : 2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="5" r="3" />
+      <path d="M6.5 8a6.5 6.5 0 0 0 11 0" />
+      <path d="M3 20h18" />
+      <path d="M5 20v-2a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v2" />
+      <line x1="12" y1="12" x2="12" y2="16" />
     </svg>
   )
 }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useFirestore } from '../hooks/useFirestore'
 import { PRESETS, calcMacroGrams } from '../utils/macros'
+import { detectTimezone, getEffectiveTimezone, setTimezoneOverride, TIMEZONE_OPTIONS } from '../utils/timezone'
 
 export default function SettingsModal({ onClose }) {
   const { user, logout, changePassword, removeAccount } = useAuth()
@@ -18,6 +19,13 @@ export default function SettingsModal({ onClose }) {
   const [showDeleteFinal, setShowDeleteFinal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+
+  // Timezone state
+  const detectedTz = detectTimezone()
+  const currentTz = getEffectiveTimezone()
+  const [selectedTz, setSelectedTz] = useState(
+    currentTz === detectedTz ? '' : currentTz
+  )
 
   useEffect(() => {
     if (targets) {
@@ -39,6 +47,10 @@ export default function SettingsModal({ onClose }) {
         customMacroRatios: preset === 'custom' ? customRatios : currentRatios,
       })
       await updateProfile(name)
+
+      // Save timezone preference
+      setTimezoneOverride(selectedTz || null)
+
       setMessage('Saved!')
       setTimeout(() => setMessage(''), 2000)
     } catch (err) {
@@ -101,6 +113,24 @@ export default function SettingsModal({ onClose }) {
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/30"
             />
+          </Section>
+
+          {/* Timezone */}
+          <Section title="Timezone">
+            <p className="text-xs text-gray-400 mb-2">
+              Detected: {detectedTz}
+            </p>
+            <select
+              value={selectedTz}
+              onChange={(e) => setSelectedTz(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/30 bg-white"
+            >
+              {TIMEZONE_OPTIONS.map(tz => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}{tz.value === '' ? ` (${detectedTz})` : ''}
+                </option>
+              ))}
+            </select>
           </Section>
 
           {/* Targets */}
@@ -247,7 +277,7 @@ export default function SettingsModal({ onClose }) {
             </p>
           )}
 
-          <p className="text-center text-[10px] text-gray-300 pb-2">Macro Tracker v1.0.0</p>
+          <p className="text-center text-[10px] text-gray-300 pb-2">Food Trackey v1.1.0</p>
         </div>
       </div>
     </div>
