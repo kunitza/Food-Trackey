@@ -20,6 +20,7 @@ export default {
       fontFamily: {
         sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
         display: ['"Outfit"', 'system-ui', 'sans-serif'],
+        logo: ['"Roboto Slab"', 'serif'],
       }
     },
   },

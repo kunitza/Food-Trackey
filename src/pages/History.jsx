@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
-  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Label,
 } from 'recharts'
 import { useFirestore } from '../hooks/useFirestore'
 import { calcCalories, getTodayKey, calcMacroGrams, lbsToKg } from '../utils/macros'
 import { getLocalDateStr } from '../utils/timezone'
 import { PRESETS } from '../utils/macros'
+
+// Chart colors
+const CHART = {
+  protein: '#082900',
+  carbs: '#846075',
+  fat: '#D4AA7D',
+  fiber: '#1F68C1',
+  weight: '#0A0B0A',
+}
 
 export default function History() {
   const { getMealsForDateRange, targets, getWeightForDateRange, weightLog } = useFirestore()
@@ -17,11 +26,12 @@ export default function History() {
 
   const weightUnit = weightLog?.preferredUnit || 'lbs'
 
-  const ratios = targets
+  // Current targets (used as fallback for days without snapshots)
+  const currentRatios = targets
     ? (targets.preset === 'custom' ? targets.customMacroRatios : (PRESETS[targets.preset] || PRESETS.balanced))
     : PRESETS.balanced
-  const dailyCals = targets?.dailyCalories || 2000
-  const macroTargets = calcMacroGrams(dailyCals, ratios)
+  const currentDailyCals = targets?.dailyCalories || 2000
+  const currentMacroTargets = calcMacroGrams(currentDailyCals, currentRatios)
 
   useEffect(() => {
     async function load() {
@@ -36,13 +46,14 @@ export default function History() {
       const meals = await getMealsForDateRange(startKey, endKey)
       const weightEntries = getWeightForDateRange(startKey, endKey)
 
-      // Create a map of weight by date
       const weightByDate = {}
       weightEntries.forEach(e => {
         weightByDate[e.date] = weightUnit === 'kg' ? lbsToKg(e.weightLbs) : e.weightLbs
       })
 
-      const chartData = meals.map(({ date, foods }) => {
+      const todayKey = getTodayKey()
+
+      const chartData = meals.map(({ date, foods, targetSnapshot }) => {
         const totals = foods.reduce(
           (acc, f) => ({
             protein: acc.protein + (f.protein || 0),
@@ -54,6 +65,13 @@ export default function History() {
           { protein: 0, carbs: 0, fat: 0, fiber: 0, calories: 0 }
         )
         const d = new Date(date + 'T12:00:00')
+
+        // Use snapshot targets for past days, current for today
+        let dayTargets = targets
+        if (date !== todayKey && targetSnapshot) {
+          dayTargets = targetSnapshot
+        }
+
         return {
           date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
           dateRaw: date,
@@ -66,13 +84,14 @@ export default function History() {
           carbsCal: Math.round(totals.carbs * 4),
           fatCal: Math.round(totals.fat * 9),
           weight: weightByDate[date] || null,
+          dayCalTarget: dayTargets?.dailyCalories || currentDailyCals,
         }
       })
       setData(chartData)
       setLoading(false)
     }
     load()
-  }, [days, getMealsForDateRange, getWeightForDateRange, weightUnit])
+  }, [days, getMealsForDateRange, getWeightForDateRange, weightUnit, targets])
 
   const avgCalories = useMemo(() => {
     if (data.length === 0) return 0
@@ -86,56 +105,39 @@ export default function History() {
 
   const hasWeightData = data.some(d => d.weight !== null)
 
+  const leftAxisLabel = mode === 'calories' ? 'Calories' : 'Grams'
+
   return (
     <div className="space-y-4 pb-2">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <h2 className="font-display text-lg font-bold text-brand-dark">History</h2>
         <div className="flex gap-1 bg-gray-100 rounded-lg p-0.5">
           {[7, 14, 30].map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={`px-3 py-1.5 text-[10px] font-semibold rounded-md transition-all ${
-                days === d ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
-              }`}
-            >
+            <button key={d} onClick={() => setDays(d)}
+              className={`px-3 py-1.5 text-[10px] font-semibold rounded-md transition-all ${days === d ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'}`}>
               {d}d
             </button>
           ))}
         </div>
       </div>
 
-      {/* Mode Toggle + Weight Toggle */}
       <div className="flex gap-2">
         <div className="flex-1 flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
           {['calories', 'grams'].map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${
-                mode === m ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'
-              }`}
-            >
+            <button key={m} onClick={() => setMode(m)}
+              className={`flex-1 py-2 text-xs font-semibold rounded-md transition-all ${mode === m ? 'bg-white text-brand-dark shadow-sm' : 'text-gray-500'}`}>
               {m === 'calories' ? 'Calories' : 'Grams'}
             </button>
           ))}
         </div>
         {hasWeightData && (
-          <button
-            onClick={() => setShowWeight(!showWeight)}
-            className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all ${
-              showWeight
-                ? 'bg-brand-purple text-white'
-                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-            }`}
-          >
+          <button onClick={() => setShowWeight(!showWeight)}
+            className={`px-3 py-2 text-xs font-semibold rounded-lg transition-all ${showWeight ? 'bg-brand-purple text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
             Weight
           </button>
         )}
       </div>
 
-      {/* Chart */}
       <div className="bg-white rounded-2xl p-3 border border-gray-100 shadow-sm">
         {loading ? (
           <div className="h-52 flex items-center justify-center">
@@ -147,102 +149,64 @@ export default function History() {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={data} margin={{ top: 5, right: showWeight ? 35 : 5, bottom: 5, left: -15 }}>
+            <ComposedChart data={data} margin={{ top: 5, right: showWeight ? 40 : 5, bottom: 5, left: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 9, fill: '#999' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 9, fill: '#999' }}
-                tickLine={false}
-                axisLine={false}
-              />
+              <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#999' }} tickLine={false} axisLine={false} />
+              <YAxis yAxisId="left" tick={{ fontSize: 9, fill: '#999' }} tickLine={false} axisLine={false}>
+                <Label value={leftAxisLabel} position="insideLeft" offset={0} style={{ fontSize: 10, fill: '#999' }} angle={-90} />
+              </YAxis>
               {showWeight && (
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 9, fill: '#846075' }}
-                  tickLine={false}
-                  axisLine={false}
-                  domain={['dataMin - 5', 'dataMax + 5']}
-                />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: CHART.weight }} tickLine={false} axisLine={false} domain={['dataMin - 5', 'dataMax + 5']}>
+                  <Label value={`Weight (${weightUnit})`} position="insideRight" offset={0} style={{ fontSize: 10, fill: '#999' }} angle={90} />
+                </YAxis>
               )}
-              <Tooltip
-                contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #eee' }}
+              <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #eee' }}
                 formatter={(val, name) => {
                   if (name === 'Weight') return [`${val} ${weightUnit}`, name]
                   if (mode === 'calories') return [`${val} cal`, name]
                   return [`${val}g`, name]
-                }}
-              />
+                }} />
 
               {mode === 'calories' ? (
                 <>
-                  <Area yAxisId="left" type="monotone" dataKey="proteinCal" stackId="1" name="Protein" stroke="#87D68D" fill="#87D68D" fillOpacity={0.7} />
-                  <Area yAxisId="left" type="monotone" dataKey="carbsCal" stackId="1" name="Carbs" stroke="#846075" fill="#846075" fillOpacity={0.6} />
-                  <Area yAxisId="left" type="monotone" dataKey="fatCal" stackId="1" name="Fat" stroke="#DBD3D8" fill="#DBD3D8" fillOpacity={0.7} />
+                  <Area yAxisId="left" type="monotone" dataKey="proteinCal" stackId="1" name="Protein" stroke={CHART.protein} fill={CHART.protein} fillOpacity={0.7} />
+                  <Area yAxisId="left" type="monotone" dataKey="carbsCal" stackId="1" name="Carbs" stroke={CHART.carbs} fill={CHART.carbs} fillOpacity={0.6} />
+                  <Area yAxisId="left" type="monotone" dataKey="fatCal" stackId="1" name="Fat" stroke={CHART.fat} fill={CHART.fat} fillOpacity={0.7} />
                 </>
               ) : (
                 <>
-                  <Area yAxisId="left" type="monotone" dataKey="protein" stackId="1" name="Protein" stroke="#87D68D" fill="#87D68D" fillOpacity={0.7} />
-                  <Area yAxisId="left" type="monotone" dataKey="carbs" stackId="1" name="Carbs" stroke="#846075" fill="#846075" fillOpacity={0.6} />
-                  <Area yAxisId="left" type="monotone" dataKey="fat" stackId="1" name="Fat" stroke="#DBD3D8" fill="#DBD3D8" fillOpacity={0.7} />
-                  <Area yAxisId="left" type="monotone" dataKey="fiber" stackId="1" name="Fiber" stroke="#D4AA7D" fill="#D4AA7D" fillOpacity={0.5} />
+                  <Area yAxisId="left" type="monotone" dataKey="protein" stackId="1" name="Protein" stroke={CHART.protein} fill={CHART.protein} fillOpacity={0.7} />
+                  <Area yAxisId="left" type="monotone" dataKey="carbs" stackId="1" name="Carbs" stroke={CHART.carbs} fill={CHART.carbs} fillOpacity={0.6} />
+                  <Area yAxisId="left" type="monotone" dataKey="fat" stackId="1" name="Fat" stroke={CHART.fat} fill={CHART.fat} fillOpacity={0.7} />
+                  <Area yAxisId="left" type="monotone" dataKey="fiber" stackId="1" name="Fiber" stroke={CHART.fiber} fill={CHART.fiber} fillOpacity={0.5} />
                 </>
               )}
 
               {showWeight && (
-                <Line
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="weight"
-                  name="Weight"
-                  stroke="#846075"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#846075' }}
-                  connectNulls
-                />
+                <Line yAxisId="right" type="monotone" dataKey="weight" name="Weight"
+                  stroke={CHART.weight} strokeWidth={2} dot={{ r: 3, fill: CHART.weight }} connectNulls />
               )}
             </ComposedChart>
           </ResponsiveContainer>
         )}
 
-        {/* Legend */}
         <div className="flex items-center justify-center gap-4 mt-2 flex-wrap">
-          <LegendItem color="#87D68D" label="Protein" />
-          <LegendItem color="#846075" label="Carbs" />
-          <LegendItem color="#DBD3D8" label="Fat" />
-          {mode === 'grams' && <LegendItem color="#D4AA7D" label="Fiber" />}
-          {showWeight && <LegendItem color="#846075" label={`Weight (${weightUnit})`} line />}
+          <LegendItem color={CHART.protein} label="Protein" />
+          <LegendItem color={CHART.carbs} label="Carbs" />
+          <LegendItem color={CHART.fat} label="Fat" />
+          {mode === 'grams' && <LegendItem color={CHART.fiber} label="Fiber" />}
+          {showWeight && <LegendItem color={CHART.weight} label={`Weight (${weightUnit})`} line />}
         </div>
       </div>
 
-      {/* Summary Cards */}
       <div className="grid grid-cols-2 gap-3">
-        <SummaryCard
-          title="Avg Daily Calories"
-          value={avgCalories}
-          target={dailyCals}
-          unit="cal"
-        />
-        <SummaryCard
-          title="Avg Daily Protein"
-          value={avgProtein}
-          target={macroTargets.protein}
-          unit="g"
-        />
+        <SummaryCard title="Avg Daily Calories" value={avgCalories} target={currentDailyCals} unit="cal" />
+        <SummaryCard title="Avg Daily Protein" value={avgProtein} target={currentMacroTargets.protein} unit="g" />
       </div>
 
-      {/* Daily Breakdown */}
       {!loading && data.length > 0 && (
         <div>
-          <h3 className="font-display text-xs font-bold text-brand-dark/60 uppercase tracking-wider mb-2">
-            Daily Breakdown
-          </h3>
+          <h3 className="font-display text-xs font-bold text-brand-dark/60 uppercase tracking-wider mb-2">Daily Breakdown</h3>
           <div className="space-y-1.5">
             {[...data].reverse().map((day) => (
               <div key={day.dateRaw} className="bg-white rounded-xl px-3 py-2.5 border border-gray-100">
@@ -250,7 +214,7 @@ export default function History() {
                   <span className="text-xs font-semibold text-brand-dark">{day.date}</span>
                   <div className="flex items-center gap-3">
                     {day.weight && (
-                      <span className="text-[10px] text-brand-purple font-semibold">
+                      <span className="text-[10px] font-semibold" style={{ color: CHART.weight }}>
                         {day.weight} {weightUnit}
                       </span>
                     )}
@@ -265,8 +229,7 @@ export default function History() {
                   <span className="ml-auto">
                     {day.calories > 0
                       ? `${Math.round((day.protein * 4 / day.calories) * 100)}/${Math.round((day.carbs * 4 / day.calories) * 100)}/${Math.round((day.fat * 9 / day.calories) * 100)}`
-                      : '–/–/–'
-                    } P/C/F
+                      : '–/–/–'} P/C/F
                   </span>
                 </div>
               </div>
@@ -299,9 +262,7 @@ function SummaryCard({ title, value, target, unit }) {
       <p className="font-display text-xl font-bold text-brand-dark mt-0.5">
         {value}<span className="text-sm font-medium text-gray-400"> {unit}</span>
       </p>
-      <p className="text-[10px] text-gray-400 mt-0.5">
-        {pct}% of {target}{unit} target
-      </p>
+      <p className="text-[10px] text-gray-400 mt-0.5">{pct}% of {target}{unit} target</p>
     </div>
   )
 }

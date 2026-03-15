@@ -15,6 +15,7 @@ export function useFirestore() {
   const [selectedDate, setSelectedDate] = useState(getTodayKey())
   const [loading, setLoading] = useState(true)
   const [weightLog, setWeightLog] = useState({ preferredUnit: 'lbs', entries: [] })
+  const [mealTargetSnapshot, setMealTargetSnapshot] = useState(null)
 
   // Listen to user targets
   useEffect(() => {
@@ -28,16 +29,19 @@ export function useFirestore() {
     return unsub
   }, [user])
 
-  // Listen to selected date's meals
+  // Listen to selected date's meals (including target snapshot)
   useEffect(() => {
     if (!user) return
     setLoading(true)
     const mealRef = doc(db, 'users', user.uid, 'meals', selectedDate)
     const unsub = onSnapshot(mealRef, (snap) => {
       if (snap.exists()) {
-        setTodayFoods(snap.data().foods || [])
+        const data = snap.data()
+        setTodayFoods(data.foods || [])
+        setMealTargetSnapshot(data.targetSnapshot || null)
       } else {
         setTodayFoods([])
+        setMealTargetSnapshot(null)
       }
       setLoading(false)
     })
@@ -82,12 +86,40 @@ export function useFirestore() {
     return unsub
   }, [user])
 
+  // Get effective targets for a given date
+  // Today = live targets, past days = snapshot if available, else live targets as fallback
+  const getEffectiveTargets = useCallback((dateStr) => {
+    const isToday = dateStr === getTodayKey()
+    if (isToday || !mealTargetSnapshot) {
+      return targets
+    }
+    return mealTargetSnapshot
+  }, [targets, mealTargetSnapshot])
+
   const updateTargets = useCallback(async (newTargets) => {
     if (!user) return
     await updateDoc(doc(db, 'users', user.uid), {
       targets: { ...newTargets, lastUpdated: serverTimestamp() },
     })
   }, [user])
+
+  // Save a target snapshot to a meal document (called when today's data changes)
+  const saveTargetSnapshot = useCallback(async (date) => {
+    if (!user || !targets) return
+    // Only snapshot for today's date
+    if (date !== getTodayKey()) return
+    const mealRef = doc(db, 'users', user.uid, 'meals', date)
+    const snap = await getDoc(mealRef)
+    if (snap.exists()) {
+      await updateDoc(mealRef, {
+        targetSnapshot: {
+          dailyCalories: targets.dailyCalories,
+          preset: targets.preset,
+          customMacroRatios: targets.customMacroRatios,
+        }
+      })
+    }
+  }, [user, targets])
 
   const addFood = useCallback(async (food, date = selectedDate) => {
     if (!user) return
@@ -100,6 +132,9 @@ export function useFirestore() {
     } else {
       await setDoc(mealRef, { foods: [foodEntry] })
     }
+
+    // Save target snapshot if this is today
+    await saveTargetSnapshot(date)
 
     // Update food history
     const histRef = doc(db, 'users', user.uid, 'data', 'foodHistory')
@@ -126,7 +161,7 @@ export function useFirestore() {
     }
 
     return foodEntry
-  }, [user, selectedDate])
+  }, [user, selectedDate, saveTargetSnapshot])
 
   const removeFood = useCallback(async (food, date = selectedDate) => {
     if (!user) return
@@ -143,7 +178,7 @@ export function useFirestore() {
     const idx = foods.findIndex(f => f.id === oldFood.id)
     if (idx === -1) return
     foods[idx] = { ...newFood, id: oldFood.id }
-    await setDoc(mealRef, { foods })
+    await setDoc(mealRef, { ...snap.data(), foods })
   }, [user, selectedDate])
 
   const addCustomFood = useCallback(async (food) => {
@@ -181,6 +216,7 @@ export function useFirestore() {
       results.push({
         date: dateKey,
         foods: snap.exists() ? (snap.data().foods || []) : [],
+        targetSnapshot: snap.exists() ? (snap.data().targetSnapshot || null) : null,
       })
       current.setDate(current.getDate() + 1)
     }
@@ -196,17 +232,16 @@ export function useFirestore() {
 
   // ---- Weight tracking ----
 
-  const addWeightEntry = useCallback(async (weight, unit) => {
+  const addWeightEntry = useCallback(async (weight, unit, date) => {
     if (!user) return
     const ref = doc(db, 'users', user.uid, 'data', 'weightLog')
     const snap = await getDoc(ref)
-    const today = getTodayKey()
+    const targetDate = date || getTodayKey()
 
-    // Always store in lbs internally
     const weightLbs = unit === 'kg' ? kgToLbs(weight) : Number(weight)
 
     const entry = {
-      date: today,
+      date: targetDate,
       weightLbs: Math.round(weightLbs * 10) / 10,
       enteredUnit: unit,
       enteredValue: Number(weight),
@@ -214,7 +249,7 @@ export function useFirestore() {
 
     if (snap.exists()) {
       const data = snap.data()
-      const entries = (data.entries || []).filter(e => e.date !== today)
+      const entries = (data.entries || []).filter(e => e.date !== targetDate)
       entries.push(entry)
       entries.sort((a, b) => a.date.localeCompare(b.date))
       await setDoc(ref, { preferredUnit: unit, entries })
@@ -257,6 +292,8 @@ export function useFirestore() {
     selectedDate,
     setSelectedDate,
     loading,
+    mealTargetSnapshot,
+    getEffectiveTargets,
     updateTargets,
     addFood,
     removeFood,
@@ -265,7 +302,6 @@ export function useFirestore() {
     removeCustomFood,
     getMealsForDateRange,
     updateProfile,
-    // Weight
     weightLog,
     addWeightEntry,
     removeWeightEntry,

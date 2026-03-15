@@ -18,12 +18,16 @@ export default function Layout() {
     <div className="h-screen flex flex-col bg-[#faf9f8] max-w-lg mx-auto">
       {/* Header */}
       <header className="flex items-center justify-between px-5 pt-4 pb-2">
-        <img
-          src="/headerlogo80.png"
-          alt="Food Trackey"
-          className="h-8"
-          style={{ imageRendering: 'auto' }}
-        />
+        <div className="flex items-center gap-2">
+          <img
+            src="/marktransparent512.png"
+            alt=""
+            className="h-9 w-9"
+          />
+          <span className="font-logo text-xl font-bold text-brand-dark tracking-tight">
+            Food Trackey
+          </span>
+        </div>
         <button
           onClick={() => setShowSettings(true)}
           className="w-9 h-9 flex items-center justify-center rounded-full hover:bg-brand-mauve/50 transition-colors"

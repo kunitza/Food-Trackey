@@ -50,15 +50,17 @@ export default function Login() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-[#faf9f8]">
       <div className="w-full max-w-sm">
-        <div className="flex justify-center mb-8">
+        <div className="flex flex-col items-center mb-8">
           <img
-            src="/logofullsmall.png"
-            alt="Food Trackey"
-            className="h-14"
+            src="/marktransparent512.png"
+            alt=""
+            className="h-20 w-20 mb-3"
           />
+          <h1 className="font-logo text-3xl font-bold text-brand-dark tracking-tight">
+            Food Trackey
+          </h1>
+          <p className="text-sm text-gray-400 mt-1">Track your nutrition, hit your targets.</p>
         </div>
-
-        <p className="text-sm text-gray-400 text-center mb-6">Track your nutrition, hit your targets.</p>
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <input

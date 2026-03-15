@@ -1,7 +1,43 @@
+import localFoods from './localFoodDb.json'
+
 const OFF_BASE = 'https://world.openfoodfacts.org'
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1'
 
-// ---- USDA FoodData Central ----
+// ---- Local database search (instant, 13K+ foods) ----
+
+export function searchLocal(query) {
+  if (!query || query.length < 2) return []
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+
+  const scored = []
+  for (const food of localFoods) {
+    const name = food.n.toLowerCase()
+    if (!terms.every(t => name.includes(t))) continue
+
+    let score = 0
+    if (name.startsWith(terms[0])) score += 100
+    if (name === query.toLowerCase()) score += 200
+    score -= name.length
+
+    scored.push({ food, score })
+  }
+
+  scored.sort((a, b) => b.score - a.score)
+
+  return scored.slice(0, 20).map(({ food }) => ({
+    id: `local-${food.n.replace(/\s+/g, '-').substring(0, 40)}`,
+    name: food.n,
+    servingSizeGrams: food.sg,
+    servingSizeLabel: food.sl,
+    protein: food.p,
+    carbs: food.c,
+    fat: food.f,
+    fiber: food.fb,
+    source: 'usda-local',
+  }))
+}
+
+// ---- USDA FoodData Central API ----
 
 export async function searchUSDA(query, pageSize = 15) {
   const apiKey = import.meta.env.VITE_USDA_API_KEY
@@ -30,27 +66,17 @@ function normalizeUSDA(food) {
   const servingGrams = food.servingSize || 100
   const servingUnit = food.servingSizeUnit || 'g'
   const servingLabel = `${servingGrams}${servingUnit}`
-
-  // USDA nutrient IDs: Protein=1003, Fat=1004, Carbs=1005, Fiber=1079, Energy=1008
-  // Values are per 100g, so scale to serving size
   const scale = servingGrams / 100
-
-  const protein = round((nutrients[1003] || 0) * scale)
-  const fat = round((nutrients[1004] || 0) * scale)
-  const carbs = round((nutrients[1005] || 0) * scale)
-  const fiber = round((nutrients[1079] || 0) * scale)
-
-  const brandSuffix = food.brandName ? ` (${food.brandName})` : ''
 
   return {
     id: `usda-${food.fdcId}`,
-    name: food.description + brandSuffix,
+    name: food.description + (food.brandName ? ` (${food.brandName})` : ''),
     servingSizeGrams: servingGrams,
     servingSizeLabel: servingLabel,
-    protein,
-    carbs,
-    fat,
-    fiber,
+    protein: round((nutrients[1003] || 0) * scale),
+    carbs: round((nutrients[1005] || 0) * scale),
+    fat: round((nutrients[1004] || 0) * scale),
+    fiber: round((nutrients[1079] || 0) * scale),
     source: 'usda',
   }
 }
@@ -66,7 +92,6 @@ export async function searchOpenFoodFacts(query, page = 1) {
     return (data.products || [])
       .filter(p => p.product_name && p.nutriments)
       .filter(p => {
-        // Additional English filter: check product name is mostly ASCII/Latin
         const name = p.product_name || ''
         const asciiRatio = name.replace(/[^\x20-\x7E]/g, '').length / (name.length || 1)
         return asciiRatio > 0.7
@@ -102,46 +127,45 @@ function normalizeOFF(p) {
     name: p.product_name + (p.brands ? ` (${p.brands})` : ''),
     servingSizeGrams: servingGrams,
     servingSizeLabel: servingStr,
-    protein,
-    carbs,
-    fat,
-    fiber,
+    protein, carbs, fat, fiber,
     source: 'open-food-facts',
   }
 }
 
-// ---- Combined search (USDA first, then OFF) ----
+// ---- Combined search: local first (instant), then APIs ----
 
 export async function searchFoods(query, page = 1) {
+  const localResults = searchLocal(query)
+
   const [usdaResults, offResults] = await Promise.all([
     searchUSDA(query),
     searchOpenFoodFacts(query, page),
   ])
 
-  // Deduplicate by similar name
   const seen = new Set()
   const combined = []
 
+  for (const food of localResults) {
+    const key = food.name.toLowerCase().trim()
+    if (!seen.has(key)) { seen.add(key); combined.push(food) }
+  }
   for (const food of usdaResults) {
     const key = food.name.toLowerCase().trim()
-    if (!seen.has(key)) {
-      seen.add(key)
-      combined.push(food)
-    }
+    if (!seen.has(key)) { seen.add(key); combined.push(food) }
   }
-
   for (const food of offResults) {
     const key = food.name.toLowerCase().trim()
-    if (!seen.has(key)) {
-      seen.add(key)
-      combined.push(food)
-    }
+    if (!seen.has(key)) { seen.add(key); combined.push(food) }
   }
 
   return combined
 }
 
-// ---- Barcode lookup (Open Food Facts only) ----
+export function searchFoodsLocal(query) {
+  return searchLocal(query)
+}
+
+// ---- Barcode lookup ----
 
 export async function lookupBarcode(barcode) {
   try {
@@ -158,8 +182,6 @@ export async function lookupBarcode(barcode) {
     return null
   }
 }
-
-// ---- Helpers ----
 
 function parseServingSize(str) {
   if (!str) return 100
