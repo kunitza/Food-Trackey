@@ -87,7 +87,6 @@ export function useFirestore() {
   }, [user])
 
   // Get effective targets for a given date
-  // Today = live targets, past days = snapshot if available, else live targets as fallback
   const getEffectiveTargets = useCallback((dateStr) => {
     const isToday = dateStr === getTodayKey()
     if (isToday || !mealTargetSnapshot) {
@@ -103,10 +102,9 @@ export function useFirestore() {
     })
   }, [user])
 
-  // Save a target snapshot to a meal document (called when today's data changes)
+  // Save a target snapshot to a meal document
   const saveTargetSnapshot = useCallback(async (date) => {
     if (!user || !targets) return
-    // Only snapshot for today's date
     if (date !== getTodayKey()) return
     const mealRef = doc(db, 'users', user.uid, 'meals', date)
     const snap = await getDoc(mealRef)
@@ -125,7 +123,11 @@ export function useFirestore() {
     if (!user) return
     const mealRef = doc(db, 'users', user.uid, 'meals', date)
     const snap = await getDoc(mealRef)
-    const foodEntry = { ...food, id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}` }
+    const foodEntry = {
+      ...food,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      loggedAt: new Date().toISOString(),
+    }
 
     if (snap.exists()) {
       await updateDoc(mealRef, { foods: arrayUnion(foodEntry) })
