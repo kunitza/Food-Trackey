@@ -11,8 +11,10 @@ export default {
           purple: '#846075',
           tan: '#D4AA7D',
           green: '#87D68D',
-          dark: '#0A3200',
+          dark: '#082900',
           mauve: '#DBD3D8',
+          plum: '#2F222A',
+          sage: '#727E6C',
         }
       },
       fontFamily: {
