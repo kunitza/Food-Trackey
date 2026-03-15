@@ -1,3 +1,5 @@
+import { getLocalDateStr, getEffectiveTimezone } from './timezone'
+
 export const PRESETS = {
   'high-protein': { protein: 25, carbs: 45, fat: 30 },
   'balanced': { protein: 20, carbs: 40, fat: 40 },
@@ -20,9 +22,9 @@ export function calcCalories(food) {
   return Math.round(p * 4 + c * 4 + f * 9)
 }
 
-export function calcFoodMacros(food, quantity) {
+export function calcFoodMacros(food, quantityGrams) {
   const servingSize = food.servingSizeGrams || 100
-  const ratio = quantity / servingSize
+  const ratio = quantityGrams / servingSize
   return {
     protein: Math.round((food.protein || 0) * ratio * 10) / 10,
     carbs: Math.round((food.carbs || 0) * ratio * 10) / 10,
@@ -32,22 +34,50 @@ export function calcFoodMacros(food, quantity) {
   }
 }
 
+// ----- Timezone-aware date helpers -----
+
 export function getTodayKey() {
-  return new Date().toISOString().split('T')[0]
+  return getLocalDateStr(new Date())
 }
 
 export function getDateKey(date) {
-  return date.toISOString().split('T')[0]
+  return getLocalDateStr(date)
 }
 
 export function formatDate(dateStr) {
+  // Parse YYYY-MM-DD as local noon to avoid off-by-one
   const d = new Date(dateStr + 'T12:00:00')
-  const today = new Date()
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
+  const todayStr = getTodayKey()
 
-  if (dateStr === getTodayKey()) return 'Today'
-  if (dateStr === getDateKey(yesterday)) return 'Yesterday'
+  if (dateStr === todayStr) return 'Today'
+
+  // Yesterday in user's timezone
+  const now = new Date()
+  const tz = getEffectiveTimezone()
+  const yesterday = new Date(now.getTime() - 86400000)
+  const yesterdayStr = getLocalDateStr(yesterday, tz)
+  if (dateStr === yesterdayStr) return 'Yesterday'
 
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// ----- Unit conversion helpers -----
+
+const GRAMS_PER_OZ = 28.3495
+const LBS_PER_KG = 2.20462
+
+export function gramsToOz(g) {
+  return Math.round((g / GRAMS_PER_OZ) * 100) / 100
+}
+
+export function ozToGrams(oz) {
+  return Math.round(oz * GRAMS_PER_OZ * 100) / 100
+}
+
+export function lbsToKg(lbs) {
+  return Math.round((lbs / LBS_PER_KG) * 10) / 10
+}
+
+export function kgToLbs(kg) {
+  return Math.round(kg * LBS_PER_KG * 10) / 10
 }
