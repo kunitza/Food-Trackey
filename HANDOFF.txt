@@ -1,0 +1,45 @@
+FOOD TRACKEY — HANDOFF LOG & ROADMAP
+=====================================
+
+Running log of work done on the project and what's left. Newest entries on top.
+Keep entries short — one line per meaningful change, grouped by session/date.
+
+
+DONE
+----
+
+2026-04-24  Dev environment bootstrap
+- Replaced stale local copy with fresh clone of github.com/kunitza/Food-Trackey
+- npm install (Vite 5 + React 18 + Firebase 10 + recharts + jsqr)
+- Linked to Vercel project kunitzas-projects/food-trackey
+- Pulled env vars from Vercel into .env.local (6 Firebase + USDA key)
+- Firebase CLI installed + logged in + bound to project food-tracker-bbb36
+- Added CLAUDE.md (project context for future Claude Code sessions)
+- Added .firebaserc + firebase.json (minimal, for CLI)
+- Expanded .gitignore (was only 2 lines from vercel link)
+- Committed package-lock.json (was missing → non-deterministic Vercel builds)
+- Local backup of pre-sync files: ../foodtrackey-local-backup.zip
+- GitHub CLI (gh) installed v2.91.0 — not yet authed
+
+
+ROADMAP
+-------
+
+Infrastructure / dev hygiene
+  [ ] gh auth login (so PR/issue workflows work from CLI)
+  [ ] Decide: Firestore security rules (currently "test mode" per README — open)
+      → lock down: users can only read/write their own uid-scoped docs
+  [ ] Add a linter (eslint) and a format-on-commit hook
+  [ ] First real commit workflow (history is all "Add files via upload")
+  [ ] PR preview deploys — already automatic via Vercel on branch push
+  [ ] Consider adding a test framework (vitest) — currently none
+
+Product / UX
+  [ ] (fill in feature goals here)
+
+Bugs
+  [ ] (log as found)
+
+Ideas / backlog
+  [ ] PWA polish — manifest.json exists, verify install/offline works
+  [ ] Habits tracking (mentioned as possible future addition)
