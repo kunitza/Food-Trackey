@@ -8,18 +8,28 @@ Keep entries short — one line per meaningful change, grouped by session/date.
 DONE
 ----
 
+2026-04-25  Firestore security rules
+- Wrote firestore.rules: owner-only (auth.uid == uid) on /users/{uid}/**, default deny
+- Wired firebase.json to firestore.rules
+- Deployed live to food-tracker-bbb36 via firebase deploy --only firestore:rules
+- Replaces open "test mode" rules
+
 2026-04-24  Dev environment bootstrap
 - Replaced stale local copy with fresh clone of github.com/kunitza/Food-Trackey
 - npm install (Vite 5 + React 18 + Firebase 10 + recharts + jsqr)
 - Linked to Vercel project kunitzas-projects/food-trackey
 - Pulled env vars from Vercel into .env.local (6 Firebase + USDA key)
-- Firebase CLI installed + logged in + bound to project food-tracker-bbb36
+- Firebase CLI installed + logged in as lightweightpromo@gmail.com
+  + bound to project food-tracker-bbb36
 - Added CLAUDE.md (project context for future Claude Code sessions)
 - Added .firebaserc + firebase.json (minimal, for CLI)
 - Expanded .gitignore (was only 2 lines from vercel link)
 - Committed package-lock.json (was missing → non-deterministic Vercel builds)
 - Local backup of pre-sync files: ../foodtrackey-local-backup.zip
 - GitHub CLI (gh) installed v2.91.0 — not yet authed
+- Global git identity set: kunitza / lightweightpromo@gmail.com
+- First real commit + push: 0e886fd "Bootstrap dev environment" → origin/main
+  (Vercel auto-deployed)
 
 
 ROADMAP
@@ -27,19 +37,26 @@ ROADMAP
 
 Infrastructure / dev hygiene
   [ ] gh auth login (so PR/issue workflows work from CLI)
-  [ ] Decide: Firestore security rules (currently "test mode" per README — open)
-      → lock down: users can only read/write their own uid-scoped docs
+  [x] Firestore security rules locked to owner-only on /users/{uid}/**
+      → done 2026-04-25 (firestore.rules deployed)
   [ ] Add a linter (eslint) and a format-on-commit hook
-  [ ] First real commit workflow (history is all "Add files via upload")
+  [x] First real commit workflow (history is all "Add files via upload")
+      → done 2026-04-24 with commit 0e886fd
   [ ] PR preview deploys — already automatic via Vercel on branch push
   [ ] Consider adding a test framework (vitest) — currently none
 
 Product / UX
-  [ ] (fill in feature goals here)
+  [ ] change average weight to max weight on weight tracker screen
+  [ ] possible addition or migration to ios friendly platform like scarlet for better mobile experience than webapp with bookmark
+  [ ] reprioritize food lookup call order and display order so best results are on top
 
 Bugs
-  [ ] (log as found)
+  [ ] barcode scanner does not work- repair/replace
+  [ ] home screen icon logo is off center when bookmarked on ios
+  [ ] Favorite food section is just recent list - should be foods tagged as favorites (add star icon to each food?
 
 Ideas / backlog
   [ ] PWA polish — manifest.json exists, verify install/offline works
   [ ] Habits tracking (mentioned as possible future addition)
+  [ ] "vice flags" for days with alcohol, missed protein goal, others?
+  [ ] Saved "Meals" for cmombinations of foods logged together frequently (auto identify these? or just manual user selection
