@@ -8,6 +8,10 @@ Keep entries short — one line per meaningful change, grouped by session/date.
 DONE
 ----
 
+2026-04-25  Weight tracker: Average → Max
+- Stat card and chart reference line now show max weight in selected range
+- src/pages/Weight.jsx: maxWeight memo replaces avgWeight
+
 2026-04-25  Firestore security rules
 - Wrote firestore.rules: owner-only (auth.uid == uid) on /users/{uid}/**, default deny
 - Wired firebase.json to firestore.rules
@@ -46,7 +50,8 @@ Infrastructure / dev hygiene
   [ ] Consider adding a test framework (vitest) — currently none
 
 Product / UX
-  [ ] change average weight to max weight on weight tracker screen
+  [x] change average weight to max weight on weight tracker screen
+      → done 2026-04-25
   [ ] possible addition or migration to ios friendly platform like scarlet for better mobile experience than webapp with bookmark
   [ ] reprioritize food lookup call order and display order so best results are on top
 

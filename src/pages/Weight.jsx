@@ -177,9 +177,9 @@ export default function Weight() {
       })
   }, [entries, unit])
 
-  const avgWeight = useMemo(() => {
+  const maxWeight = useMemo(() => {
     if (chartData.length === 0) return null
-    return Math.round((chartData.reduce((acc, d) => acc + d.weight, 0) / chartData.length) * 10) / 10
+    return Math.round(Math.max(...chartData.map(d => d.weight)) * 10) / 10
   }, [chartData])
 
   const weightChange = useMemo(() => {
@@ -272,9 +272,9 @@ export default function Weight() {
             </p>
           </div>
           <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
-            <p className="text-[10px] text-gray-400 font-medium uppercase">Average</p>
+            <p className="text-[10px] text-gray-400 font-medium uppercase">Max</p>
             <p className="font-display text-lg font-bold text-brand-dark">
-              {avgWeight}<span className="text-xs font-medium text-gray-400"> {unit}</span>
+              {maxWeight}<span className="text-xs font-medium text-gray-400"> {unit}</span>
             </p>
           </div>
           <div className="bg-white rounded-xl p-3 border border-gray-100 text-center">
@@ -315,9 +315,9 @@ export default function Weight() {
                 <Label value={unit} position="insideLeft" offset={0} style={{ fontSize: 10, fill: '#999' }} angle={-90} />
               </YAxis>
               <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #eee' }} formatter={(val) => [`${val} ${unit}`, 'Weight']} />
-              {avgWeight && (
-                <ReferenceLine y={avgWeight} stroke="#DBD3D8" strokeDasharray="3 3"
-                  label={{ value: `avg: ${avgWeight}`, fill: '#999', fontSize: 9, position: 'right' }} />
+              {maxWeight && (
+                <ReferenceLine y={maxWeight} stroke="#DBD3D8" strokeDasharray="3 3"
+                  label={{ value: `max: ${maxWeight}`, fill: '#999', fontSize: 9, position: 'right' }} />
               )}
               <Line type="monotone" dataKey="weight" stroke="#0A0B0A" strokeWidth={2}
                 dot={{ r: 3, fill: '#0A0B0A', strokeWidth: 0 }} activeDot={{ r: 5, fill: '#0A0B0A' }} />
