@@ -22,6 +22,8 @@ const SOURCE = path.join(PUBLIC, 'icon1024.png')
 
 // Donut bbox inside icon1024.png (measured)
 const SRC = { left: 123, top: 123, width: 779, height: 779 }
+// Donut ring geometry inside icon1024.png — center at (518, 518), radii in source pixels.
+const RING = { srcSize: 1036, outerR: 386, innerR: 218 }
 
 // Brand cream background (sampled from the existing rounded-rect interior)
 const BG = { r: 234, g: 235, b: 230, alpha: 1 }
@@ -50,11 +52,42 @@ async function buildIcon(targetSize, outName, fillRatio = FILL_RATIO) {
   console.log(`wrote ${outName} (${targetSize}x${targetSize}, donut ${donutPx}px)`)
 }
 
+// Build a transparent-background PNG of just the donut ring (no cream center, no cream
+// outside). Used by the splash, header, and login/signup screens — overlays on any
+// background color.
+async function buildMark(targetSize, outName) {
+  const scale = targetSize / RING.srcSize
+  const outerR = RING.outerR * scale
+  const innerR = RING.innerR * scale
+  const cx = targetSize / 2
+  const cy = targetSize / 2
+  const midR = (outerR + innerR) / 2
+  const strokeW = outerR - innerR
+
+  // Ring-only alpha mask: stroke a circle at mid-radius with thickness = ring width.
+  // Inside the inner radius and outside the outer radius stays transparent.
+  const maskSvg = Buffer.from(`<svg width="${targetSize}" height="${targetSize}" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="${cx}" cy="${cy}" r="${midR}" fill="none" stroke="white" stroke-width="${strokeW}"/>
+  </svg>`)
+
+  const donut = await sharp(SOURCE)
+    .resize(targetSize, targetSize, { fit: 'fill', kernel: 'lanczos3' })
+    .ensureAlpha()
+    .toBuffer()
+
+  await sharp(donut)
+    .composite([{ input: maskSvg, blend: 'dest-in' }])
+    .png({ compressionLevel: 9 })
+    .toFile(path.join(PUBLIC, outName))
+  console.log(`wrote ${outName} (${targetSize}x${targetSize}, ring ${innerR.toFixed(0)}..${outerR.toFixed(0)}px)`)
+}
+
 async function main() {
   await buildIcon(180, 'icon180appletouch.png')
   await buildIcon(192, 'icon192.png')
   await buildIcon(512, 'icon512.png')
   await buildIcon(512, 'icon512maskable.png', MASKABLE_RATIO)
+  await buildMark(512, 'marktransparent512.png')
 }
 
 main().catch(err => { console.error(err); process.exit(1) })
