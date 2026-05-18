@@ -36,8 +36,11 @@ export default function Layout() {
         background: '#faf9f8',
       }}
     >
-      {/* Header - fixed at top */}
-      <header className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0 bg-[#faf9f8]">
+      {/* Header - fixed at top; pad for Dynamic Island / notch */}
+      <header
+        className="flex items-center justify-between px-5 pb-2 shrink-0 bg-[#faf9f8]"
+        style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 16px)' }}
+      >
         <div className="flex items-center gap-2">
           <img src="/marktransparent512.png" alt="" className="h-9 w-9" />
           <span className="font-logo text-xl font-bold text-brand-dark tracking-tight">
