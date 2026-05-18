@@ -22,6 +22,11 @@ html, body, #root {
   padding: 0;
 }
 
+html {
+  /* iOS fills the status-bar / safe-area zone with the html background. */
+  background: #faf9f8;
+}
+
 body {
   background: #faf9f8;
   color: #1a1a1a;
