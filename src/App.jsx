@@ -112,6 +112,19 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [])
 
+  useEffect(() => {
+    // Prefetch chart-heavy pages on idle so the user doesn't pay the chunk
+    // download cost when they first tap History or Weight.
+    const prefetch = () => {
+      import('./pages/History')
+      import('./pages/Weight')
+    }
+    if (typeof window !== 'undefined') {
+      if ('requestIdleCallback' in window) requestIdleCallback(prefetch, { timeout: 3000 })
+      else setTimeout(prefetch, 1500)
+    }
+  }, [])
+
   return (
     <BrowserRouter>
       <AuthProvider>

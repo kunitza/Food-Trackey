@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
-  doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp, arrayUnion, arrayRemove,
+  doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, serverTimestamp, arrayUnion, arrayRemove,
+  collection, query, where, documentId,
 } from 'firebase/firestore'
 import { updateProfile as authUpdateProfile } from 'firebase/auth'
 import { auth, db } from '../firebase'
@@ -223,6 +224,7 @@ export function useFirestore() {
 
   const getMealsForDateRange = useCallback(async (startDate, endDate) => {
     if (!user) return []
+    // Build the full date list so days with zero meals still appear in the chart.
     const dates = []
     const current = new Date(startDate + 'T12:00:00')
     const end = new Date(endDate + 'T12:00:00')
@@ -233,18 +235,22 @@ export function useFirestore() {
       dates.push(`${y}-${m}-${d}`)
       current.setDate(current.getDate() + 1)
     }
-    // Parallel fetch — was sequential, burning quota and latency.
-    const snaps = await Promise.all(
-      dates.map(dateKey => getDoc(doc(db, 'users', user.uid, 'meals', dateKey)))
+    // Single range query — one network roundtrip for the whole range, vs N
+    // separate getDoc() calls. Doc IDs are YYYY-MM-DD so they sort lexicographically.
+    const mealsCol = collection(db, 'users', user.uid, 'meals')
+    const q = query(
+      mealsCol,
+      where(documentId(), '>=', startDate),
+      where(documentId(), '<=', endDate),
     )
-    return dates.map((dateKey, i) => {
-      const snap = snaps[i]
-      return {
-        date: dateKey,
-        foods: snap.exists() ? (snap.data().foods || []) : [],
-        targetSnapshot: snap.exists() ? (snap.data().targetSnapshot || null) : null,
-      }
-    })
+    const snap = await getDocs(q)
+    const byDate = {}
+    snap.forEach(d => { byDate[d.id] = d.data() })
+    return dates.map(dateKey => ({
+      date: dateKey,
+      foods: byDate[dateKey]?.foods || [],
+      targetSnapshot: byDate[dateKey]?.targetSnapshot || null,
+    }))
   }, [user])
 
   const updateProfile = useCallback(async (name) => {
