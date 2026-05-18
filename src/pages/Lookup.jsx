@@ -1,8 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useMemo, lazy, Suspense } from 'react'
 import { useFirestore } from '../hooks/useFirestore'
 import { searchFoods, searchLocal, lookupBarcode } from '../utils/foodApi'
 import { calcFoodMacros, calcCalories, gramsToOz, ozToGrams } from '../utils/macros'
-import BarcodeScanner from '../components/BarcodeScanner'
+
+// Scanner is heavy (zxing decoder) — load only when user opens it.
+const BarcodeScanner = lazy(() => import('../components/BarcodeScanner'))
 
 export default function Lookup({ overlayMode = false, targetDate, onClose }) {
   const { foodHistory, customFoods, addFood, addCustomFood, toggleFavoriteFood, selectedDate } = useFirestore()
@@ -353,10 +355,16 @@ export default function Lookup({ overlayMode = false, targetDate, onClose }) {
       )}
 
       {showScanner && (
-        <BarcodeScanner
-          onScan={handleBarcodeScan}
-          onClose={() => setShowScanner(false)}
-        />
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          </div>
+        }>
+          <BarcodeScanner
+            onScan={handleBarcodeScan}
+            onClose={() => setShowScanner(false)}
+          />
+        </Suspense>
       )}
     </div>
   )
