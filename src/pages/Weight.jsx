@@ -4,6 +4,7 @@ import {
 } from 'recharts'
 import { useFirestore } from '../hooks/useFirestore'
 import { getTodayKey, lbsToKg, kgToLbs, formatDate } from '../utils/macros'
+import { getLocalDateStr } from '../utils/timezone'
 
 // ---- Simple Date Picker (no red weekends) ----
 function SimpleDatePicker({ value, max, onChange }) {
@@ -150,7 +151,8 @@ export default function Weight() {
     if (chartRange !== 'all') {
       const cutoff = new Date()
       cutoff.setDate(cutoff.getDate() - chartRange)
-      const cutoffStr = cutoff.toISOString().split('T')[0]
+      // Use effective-timezone date key, not UTC, so users west of UTC don't lose today's entry.
+      const cutoffStr = getLocalDateStr(cutoff)
       filtered = filtered.filter(e => e.date >= cutoffStr)
     }
     return filtered.map(e => {

@@ -1,16 +1,36 @@
-import localFoods from './localFoodDb.json'
-
 const OFF_BASE = 'https://world.openfoodfacts.org'
-const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1'
 
 // ---- Local database search (instant, 13K+ foods) ----
+// Lazy-loaded so the 1.5MB JSON isn't bundled into the initial app payload.
 
-export function searchLocal(query) {
+let localFoodsCache = null
+let localFoodsPromise = null
+
+function loadLocalFoods() {
+  if (localFoodsCache) return Promise.resolve(localFoodsCache)
+  if (!localFoodsPromise) {
+    localFoodsPromise = import('./localFoodDb.json').then(mod => {
+      localFoodsCache = mod.default || mod
+      return localFoodsCache
+    })
+  }
+  return localFoodsPromise
+}
+
+// Kick off the load proactively (idle / first paint).
+if (typeof window !== 'undefined') {
+  const start = () => loadLocalFoods()
+  if ('requestIdleCallback' in window) requestIdleCallback(start, { timeout: 2000 })
+  else setTimeout(start, 500)
+}
+
+export async function searchLocal(query) {
   if (!query || query.length < 2) return []
+  const foods = await loadLocalFoods()
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
 
   const scored = []
-  for (const food of localFoods) {
+  for (const food of foods) {
     const name = food.n.toLowerCase()
     if (!terms.every(t => name.includes(t))) continue
 
@@ -38,15 +58,15 @@ export function searchLocal(query) {
 }
 
 // ---- USDA FoodData Central API ----
+// Calls go through /api/usda (a Vercel Function) so the USDA key stays server-side.
+// In local dev without the function, the call returns []; search still works via
+// the local DB and Open Food Facts.
 
 export async function searchUSDA(query, pageSize = 15) {
-  const apiKey = import.meta.env.VITE_USDA_API_KEY
-  if (!apiKey) return []
-
   try {
-    const url = `${USDA_BASE}/foods/search?query=${encodeURIComponent(query)}&api_key=${apiKey}&pageSize=${pageSize}&dataType=SR%20Legacy,Foundation,Branded`
+    const url = `/api/usda?query=${encodeURIComponent(query)}&pageSize=${pageSize}`
     const res = await fetch(url)
-    if (!res.ok) throw new Error('USDA API request failed')
+    if (!res.ok) return []
     const data = await res.json()
     return (data.foods || [])
       .filter(f => f.description)
@@ -92,9 +112,13 @@ export async function searchOpenFoodFacts(query, page = 1) {
     return (data.products || [])
       .filter(p => p.product_name && p.nutriments)
       .filter(p => {
+        // Prefer the product's declared language when present; fall back to a permissive
+        // ASCII check so single-emoji/accented brand names aren't dropped.
+        if (p.lang === 'en' || p.lc === 'en') return true
+        if (p.lang || p.lc) return false
         const name = p.product_name || ''
         const asciiRatio = name.replace(/[^\x20-\x7E]/g, '').length / (name.length || 1)
-        return asciiRatio > 0.7
+        return asciiRatio > 0.5
       })
       .map(normalizeOFF)
   } catch (err) {
@@ -135,9 +159,8 @@ function normalizeOFF(p) {
 // ---- Combined search: local first (instant), then APIs ----
 
 export async function searchFoods(query, page = 1) {
-  const localResults = searchLocal(query)
-
-  const [usdaResults, offResults] = await Promise.all([
+  const [localResults, usdaResults, offResults] = await Promise.all([
+    searchLocal(query),
     searchUSDA(query),
     searchOpenFoodFacts(query, page),
   ])
@@ -159,10 +182,6 @@ export async function searchFoods(query, page = 1) {
   }
 
   return combined
-}
-
-export function searchFoodsLocal(query) {
-  return searchLocal(query)
 }
 
 // ---- Barcode lookup ----

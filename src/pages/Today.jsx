@@ -92,9 +92,22 @@ export default function Today() {
 
   async function saveEdit(food) {
     const newQty = Number(editQty) || food.servingSizeGrams || 100
-    const ratio = newQty / (food.servingSizeGrams || 100)
-    const base = food._base || food
-
+    // _base holds the unscaled per-serving macros. For legacy entries (logged before
+    // _base existed) reconstruct it from the current quantity, so re-edits don't compound.
+    let base = food._base
+    if (!base) {
+      const baseServing = food.servingSizeGrams || 100
+      const loggedQty = food.quantity || baseServing
+      const inv = baseServing / loggedQty
+      base = {
+        servingSizeGrams: baseServing,
+        protein: (food.protein || 0) * inv,
+        carbs: (food.carbs || 0) * inv,
+        fat: (food.fat || 0) * inv,
+        fiber: (food.fiber || 0) * inv,
+      }
+    }
+    const ratio = newQty / (base.servingSizeGrams || 100)
     const updated = {
       ...food,
       quantity: newQty,
@@ -102,6 +115,7 @@ export default function Today() {
       carbs: Math.round((base.carbs || 0) * ratio * 10) / 10,
       fat: Math.round((base.fat || 0) * ratio * 10) / 10,
       fiber: Math.round((base.fiber || 0) * ratio * 10) / 10,
+      _base: base,
     }
     await updateFood(food, updated)
     setEditingId(null)

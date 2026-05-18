@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   doc, getDoc, setDoc, updateDoc, onSnapshot, serverTimestamp, arrayUnion, arrayRemove,
 } from 'firebase/firestore'
-import { db } from '../firebase'
+import { updateProfile as authUpdateProfile } from 'firebase/auth'
+import { auth, db } from '../firebase'
 import { useAuth } from '../contexts/AuthContext'
 import { getTodayKey, kgToLbs } from '../utils/macros'
 
@@ -122,26 +123,34 @@ export function useFirestore() {
   const addFood = useCallback(async (food, date = selectedDate) => {
     if (!user) return
     const mealRef = doc(db, 'users', user.uid, 'meals', date)
-    const snap = await getDoc(mealRef)
     const foodEntry = {
       ...food,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       loggedAt: new Date().toISOString(),
+      // Snapshot per-base-serving macros so future quantity edits scale correctly.
+      _base: {
+        servingSizeGrams: food.servingSizeGrams || 100,
+        protein: food.protein || 0,
+        carbs: food.carbs || 0,
+        fat: food.fat || 0,
+        fiber: food.fiber || 0,
+      },
     }
 
-    if (snap.exists()) {
-      await updateDoc(mealRef, { foods: arrayUnion(foodEntry) })
-    } else {
-      await setDoc(mealRef, { foods: [foodEntry] })
-    }
+    // Atomic append; no read-then-write race.
+    await setDoc(mealRef, { foods: arrayUnion(foodEntry) }, { merge: true })
 
     // Save target snapshot if this is today
     await saveTargetSnapshot(date)
 
-    // Update food history
+    // Update food history — read+write is fine here (single-user, infrequent contention),
+    // but use merge so we don't blow away sibling fields like favorites toggled meanwhile.
     const histRef = doc(db, 'users', user.uid, 'data', 'foodHistory')
     const histSnap = await getDoc(histRef)
     const now = new Date().toISOString()
+    const existingItem = histSnap.exists()
+      ? (histSnap.data().items || []).find(i => i.name === food.name)
+      : null
     const histEntry = {
       name: food.name,
       lastLogged: now,
@@ -151,13 +160,15 @@ export function useFirestore() {
       fiber: food.fiber,
       servingSizeGrams: food.servingSizeGrams,
       source: food.source || 'open-food-facts',
+      // Preserve favorite flag across re-logs.
+      favorite: existingItem?.favorite || false,
     }
 
     if (histSnap.exists()) {
       const items = histSnap.data().items || []
       const filtered = items.filter(i => i.name !== food.name)
       const updated = [histEntry, ...filtered].slice(0, 50)
-      await setDoc(histRef, { items: updated })
+      await setDoc(histRef, { items: updated }, { merge: true })
     } else {
       await setDoc(histRef, { items: [histEntry] })
     }
@@ -180,20 +191,15 @@ export function useFirestore() {
     const idx = foods.findIndex(f => f.id === oldFood.id)
     if (idx === -1) return
     foods[idx] = { ...newFood, id: oldFood.id }
-    await setDoc(mealRef, { ...snap.data(), foods })
+    // Only write the foods array — preserves targetSnapshot and any other fields.
+    await updateDoc(mealRef, { foods })
   }, [user, selectedDate])
 
   const addCustomFood = useCallback(async (food) => {
     if (!user) return
     const ref = doc(db, 'users', user.uid, 'data', 'customFoods')
-    const snap = await getDoc(ref)
     const entry = { ...food, id: `custom-${Date.now()}`, dateAdded: new Date().toISOString() }
-
-    if (snap.exists()) {
-      await updateDoc(ref, { items: arrayUnion(entry) })
-    } else {
-      await setDoc(ref, { items: [entry] })
-    }
+    await setDoc(ref, { items: arrayUnion(entry) }, { merge: true })
     return entry
   }, [user])
 
@@ -203,26 +209,42 @@ export function useFirestore() {
     await updateDoc(ref, { items: arrayRemove(food) })
   }, [user])
 
+  const toggleFavoriteFood = useCallback(async (foodName) => {
+    if (!user) return
+    const ref = doc(db, 'users', user.uid, 'data', 'foodHistory')
+    const snap = await getDoc(ref)
+    if (!snap.exists()) return
+    const items = snap.data().items || []
+    const updated = items.map(i =>
+      i.name === foodName ? { ...i, favorite: !i.favorite } : i
+    )
+    await setDoc(ref, { items: updated }, { merge: true })
+  }, [user])
+
   const getMealsForDateRange = useCallback(async (startDate, endDate) => {
     if (!user) return []
-    const results = []
+    const dates = []
     const current = new Date(startDate + 'T12:00:00')
     const end = new Date(endDate + 'T12:00:00')
-
     while (current <= end) {
       const y = current.getFullYear()
       const m = String(current.getMonth() + 1).padStart(2, '0')
       const d = String(current.getDate()).padStart(2, '0')
-      const dateKey = `${y}-${m}-${d}`
-      const snap = await getDoc(doc(db, 'users', user.uid, 'meals', dateKey))
-      results.push({
+      dates.push(`${y}-${m}-${d}`)
+      current.setDate(current.getDate() + 1)
+    }
+    // Parallel fetch — was sequential, burning quota and latency.
+    const snaps = await Promise.all(
+      dates.map(dateKey => getDoc(doc(db, 'users', user.uid, 'meals', dateKey)))
+    )
+    return dates.map((dateKey, i) => {
+      const snap = snaps[i]
+      return {
         date: dateKey,
         foods: snap.exists() ? (snap.data().foods || []) : [],
         targetSnapshot: snap.exists() ? (snap.data().targetSnapshot || null) : null,
-      })
-      current.setDate(current.getDate() + 1)
-    }
-    return results
+      }
+    })
   }, [user])
 
   const updateProfile = useCallback(async (name) => {
@@ -230,6 +252,10 @@ export function useFirestore() {
     await updateDoc(doc(db, 'users', user.uid), {
       'profile.name': name,
     })
+    // Also keep Firebase Auth displayName in sync so useAuth().user.displayName is fresh.
+    if (auth.currentUser) {
+      await authUpdateProfile(auth.currentUser, { displayName: name })
+    }
   }, [user])
 
   // ---- Weight tracking ----
@@ -254,7 +280,8 @@ export function useFirestore() {
       const entries = (data.entries || []).filter(e => e.date !== targetDate)
       entries.push(entry)
       entries.sort((a, b) => a.date.localeCompare(b.date))
-      await setDoc(ref, { preferredUnit: unit, entries })
+      // Preserve preferredUnit (don't auto-flip it just because user logged in another unit).
+      await setDoc(ref, { preferredUnit: data.preferredUnit || unit, entries }, { merge: true })
     } else {
       await setDoc(ref, { preferredUnit: unit, entries: [entry] })
     }
@@ -267,7 +294,7 @@ export function useFirestore() {
     if (!snap.exists()) return
     const data = snap.data()
     const entries = (data.entries || []).filter(e => e.date !== date)
-    await setDoc(ref, { ...data, entries })
+    await setDoc(ref, { ...data, entries }, { merge: true })
   }, [user])
 
   const updateWeightUnit = useCallback(async (unit) => {
@@ -302,6 +329,7 @@ export function useFirestore() {
     updateFood,
     addCustomFood,
     removeCustomFood,
+    toggleFavoriteFood,
     getMealsForDateRange,
     updateProfile,
     weightLog,

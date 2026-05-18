@@ -47,13 +47,13 @@ export default function Signup() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
-          <input type="text" placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)}
+          <input type="text" placeholder="Name (optional)" aria-label="Name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)}
             className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20" />
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required
+          <input type="email" placeholder="Email" aria-label="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required
             className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20" />
-          <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required
+          <input type="password" placeholder="Password" aria-label="Password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required
             className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20" />
-          <input type="password" placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required
+          <input type="password" placeholder="Confirm password" aria-label="Confirm password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required
             className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20" />
           {error && <p className="text-xs text-red-500 text-center">{error}</p>}
           <button type="submit" disabled={loading}

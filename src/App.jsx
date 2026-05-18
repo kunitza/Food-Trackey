@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import Layout from './components/Layout'
@@ -7,8 +7,18 @@ import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Today from './pages/Today'
 import Lookup from './pages/Lookup'
-import History from './pages/History'
-import Weight from './pages/Weight'
+
+// Lazy-load chart-heavy pages so recharts isn't in the initial bundle.
+const History = lazy(() => import('./pages/History'))
+const Weight = lazy(() => import('./pages/Weight'))
+
+function PageLoader() {
+  return (
+    <div className="h-64 flex items-center justify-center">
+      <div className="w-6 h-6 border-2 border-brand-purple/30 border-t-brand-purple rounded-full animate-spin" />
+    </div>
+  )
+}
 
 // Splash screen shown on app load
 function SplashScreen() {
@@ -114,8 +124,8 @@ export default function App() {
               <Route element={<Layout />}>
                 <Route path="/" element={<Today />} />
                 <Route path="/lookup" element={<Lookup />} />
-                <Route path="/history" element={<History />} />
-                <Route path="/weight" element={<Weight />} />
+                <Route path="/history" element={<Suspense fallback={<PageLoader />}><History /></Suspense>} />
+                <Route path="/weight" element={<Suspense fallback={<PageLoader />}><Weight /></Suspense>} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

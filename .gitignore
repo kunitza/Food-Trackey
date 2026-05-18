@@ -27,3 +27,5 @@ Thumbs.db
 .vercel
 .firebase/
 .claude/
+
+.env*.local

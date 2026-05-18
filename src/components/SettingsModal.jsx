@@ -98,6 +98,7 @@ export default function SettingsModal({ onClose }) {
       onClose()
     } catch (err) {
       setMessage('Error saving: ' + err.message)
+    } finally {
       setSaving(false)
     }
   }

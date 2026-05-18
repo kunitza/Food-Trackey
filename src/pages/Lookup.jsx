@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useFirestore } from '../hooks/useFirestore'
-import { searchFoods, searchFoodsLocal, lookupBarcode } from '../utils/foodApi'
+import { searchFoods, searchLocal, lookupBarcode } from '../utils/foodApi'
 import { calcFoodMacros, calcCalories, gramsToOz, ozToGrams } from '../utils/macros'
 import BarcodeScanner from '../components/BarcodeScanner'
 
 export default function Lookup({ overlayMode = false, targetDate, onClose }) {
-  const { foodHistory, customFoods, addFood, addCustomFood, selectedDate } = useFirestore()
+  const { foodHistory, customFoods, addFood, addCustomFood, toggleFavoriteFood, selectedDate } = useFirestore()
 
   const logDate = targetDate || selectedDate
 
@@ -34,13 +34,9 @@ export default function Lookup({ overlayMode = false, targetDate, onClose }) {
   }, [foodHistory])
 
   const favorites = useMemo(() => {
-    const counts = {}
-    foodHistory.forEach(f => { counts[f.name] = (counts[f.name] || 0) + 1 })
-    const seen = new Set()
     return foodHistory
-      .filter(f => { if (seen.has(f.name)) return false; seen.add(f.name); return true })
-      .sort((a, b) => (counts[b.name] || 0) - (counts[a.name] || 0))
-      .slice(0, 15)
+      .filter(f => f.favorite)
+      .sort((a, b) => new Date(b.lastLogged) - new Date(a.lastLogged))
   }, [foodHistory])
 
   // Combine local + api results
@@ -68,7 +64,7 @@ export default function Lookup({ overlayMode = false, targetDate, onClose }) {
     return combined
   }, [localResults, apiResults, customFoods, query])
 
-  // Search: instant local, debounced API
+  // Search: instant local (once loaded), debounced API
   useEffect(() => {
     if (!query.trim()) {
       setLocalResults([])
@@ -76,25 +72,31 @@ export default function Lookup({ overlayMode = false, targetDate, onClose }) {
       return
     }
 
-    // Immediate local results
-    const local = searchFoodsLocal(query)
-    setLocalResults(local)
+    let cancelled = false
 
-    // Scroll results to top
-    if (resultsRef.current) resultsRef.current.scrollTop = 0
+    ;(async () => {
+      const local = await searchLocal(query)
+      if (cancelled) return
+      setLocalResults(local)
 
-    // Debounced API search
-    clearTimeout(searchTimeout.current)
-    searchTimeout.current = setTimeout(async () => {
-      setSearching(true)
-      const api = await searchFoods(query)
-      // Remove dupes already in local
-      const localNames = new Set(local.map(f => f.name.toLowerCase().trim()))
-      setApiResults(api.filter(f => !localNames.has(f.name.toLowerCase().trim())))
-      setSearching(false)
-    }, 400)
+      if (resultsRef.current) resultsRef.current.scrollTop = 0
 
-    return () => clearTimeout(searchTimeout.current)
+      clearTimeout(searchTimeout.current)
+      searchTimeout.current = setTimeout(async () => {
+        if (cancelled) return
+        setSearching(true)
+        const api = await searchFoods(query)
+        if (cancelled) return
+        const localNames = new Set(local.map(f => f.name.toLowerCase().trim()))
+        setApiResults(api.filter(f => !localNames.has(f.name.toLowerCase().trim())))
+        setSearching(false)
+      }, 400)
+    })()
+
+    return () => {
+      cancelled = true
+      clearTimeout(searchTimeout.current)
+    }
   }, [query, customFoods])
 
   async function handleBarcodeScan(barcode) {
@@ -308,7 +310,12 @@ export default function Lookup({ overlayMode = false, targetDate, onClose }) {
               ) : (
                 <div className="space-y-1.5">
                   {recents.map((food, i) => (
-                    <FoodRow key={`recent-${i}`} food={food} onClick={() => selectHistoryFood(food)} />
+                    <FoodRow
+                      key={`recent-${i}`}
+                      food={food}
+                      onClick={() => selectHistoryFood(food)}
+                      onToggleFavorite={() => toggleFavoriteFood(food.name)}
+                    />
                   ))}
                 </div>
               )}
@@ -318,11 +325,18 @@ export default function Lookup({ overlayMode = false, targetDate, onClose }) {
           {tab === 'favorites' && (
             <div>
               {favorites.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">No favorites yet</p>
+                <p className="text-xs text-gray-400 text-center py-4">
+                  No favorites yet — tap the star on a recent food to favorite it.
+                </p>
               ) : (
                 <div className="space-y-1.5">
                   {favorites.map((food, i) => (
-                    <FoodRow key={`fav-${i}`} food={food} onClick={() => selectHistoryFood(food)} />
+                    <FoodRow
+                      key={`fav-${i}`}
+                      food={food}
+                      onClick={() => selectHistoryFood(food)}
+                      onToggleFavorite={() => toggleFavoriteFood(food.name)}
+                    />
                   ))}
                 </div>
               )}
@@ -361,25 +375,44 @@ export default function Lookup({ overlayMode = false, targetDate, onClose }) {
   return content
 }
 
-function FoodRow({ food, onClick }) {
+function FoodRow({ food, onClick, onToggleFavorite }) {
   const cals = calcCalories(food)
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-white rounded-xl px-3 py-2.5 border border-gray-100 hover:border-brand-purple/30 hover:bg-brand-purple/5 transition-all"
-    >
-      <p className="text-sm font-medium text-brand-dark truncate">{food.name}</p>
-      <div className="flex gap-3 mt-0.5 text-[10px] text-gray-500">
-        <span>{cals} cal</span>
-        <span>P:{Math.round(food.protein || 0)}g</span>
-        <span>C:{Math.round(food.carbs || 0)}g</span>
-        <span>F:{Math.round(food.fat || 0)}g</span>
-        {food.source === 'user-custom' && <span className="text-brand-purple font-semibold">Custom</span>}
-        {food.source === 'usda' && <span className="text-brand-green font-semibold">USDA</span>}
-        {food.source === 'usda-local' && <span className="text-brand-sage font-semibold">USDA</span>}
-        {food.servingSizeLabel && <span className="text-gray-400">{food.servingSizeLabel}</span>}
-      </div>
-    </button>
+    <div className="relative w-full bg-white rounded-xl border border-gray-100 hover:border-brand-purple/30 hover:bg-brand-purple/5 transition-all">
+      <button
+        onClick={onClick}
+        className="w-full text-left px-3 py-2.5 pr-9"
+      >
+        <p className="text-sm font-medium text-brand-dark truncate">{food.name}</p>
+        <div className="flex gap-3 mt-0.5 text-[10px] text-gray-500">
+          <span>{cals} cal</span>
+          <span>P:{Math.round(food.protein || 0)}g</span>
+          <span>C:{Math.round(food.carbs || 0)}g</span>
+          <span>F:{Math.round(food.fat || 0)}g</span>
+          {food.source === 'user-custom' && <span className="text-brand-purple font-semibold">Custom</span>}
+          {food.source === 'usda' && <span className="text-brand-green font-semibold">USDA</span>}
+          {food.source === 'usda-local' && <span className="text-brand-sage font-semibold">USDA</span>}
+          {food.servingSizeLabel && <span className="text-gray-400">{food.servingSizeLabel}</span>}
+        </div>
+      </button>
+      {onToggleFavorite && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite() }}
+          className="absolute top-1/2 right-1.5 -translate-y-1/2 p-1.5 rounded-lg hover:bg-yellow-50 transition-colors"
+          aria-label={food.favorite ? 'Unfavorite' : 'Favorite'}
+          title={food.favorite ? 'Unfavorite' : 'Favorite'}
+        >
+          <svg
+            width="16" height="16" viewBox="0 0 24 24"
+            fill={food.favorite ? '#FBBF24' : 'none'}
+            stroke={food.favorite ? '#FBBF24' : '#CBD5E1'}
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          >
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+          </svg>
+        </button>
+      )}
+    </div>
   )
 }
 
