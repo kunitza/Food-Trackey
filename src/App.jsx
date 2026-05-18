@@ -50,7 +50,7 @@ function SplashScreen() {
         <img
           src="/marktransparent512.png"
           alt=""
-          className="w-24 h-24 drop-shadow-lg"
+          className="w-40 h-40 drop-shadow-lg"
           style={{ animation: 'splashPulse 1.5s ease-in-out infinite' }}
         />
         <span className="font-logo text-3xl font-bold text-white drop-shadow-md tracking-tight">

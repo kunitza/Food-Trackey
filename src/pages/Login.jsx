@@ -54,7 +54,7 @@ export default function Login() {
           <img
             src="/marktransparent512.png"
             alt=""
-            className="h-20 w-20 mb-3"
+            className="h-28 w-28 mb-3"
           />
           <h1 className="font-logo text-3xl font-bold text-brand-dark tracking-tight">
             Food Trackey

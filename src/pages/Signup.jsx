@@ -41,7 +41,7 @@ export default function Signup() {
     <div className="min-h-screen flex flex-col items-center justify-center px-6 bg-[#faf9f8]">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-6">
-          <img src="/marktransparent512.png" alt="" className="h-20 w-20 mb-3" />
+          <img src="/marktransparent512.png" alt="" className="h-28 w-28 mb-3" />
           <h1 className="font-logo text-3xl font-bold text-brand-dark tracking-tight">Food Trackey</h1>
           <p className="text-sm text-gray-400 mt-1">Start tracking your macros today.</p>
         </div>
